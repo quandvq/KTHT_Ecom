@@ -1,4 +1,4 @@
-﻿namespace Ktht.Domain;
+namespace Ktht.Domain;
 public sealed class Product
 {
     public int Id { get; set; }
@@ -13,5 +13,10 @@ public sealed class Product
     public bool IsFeatured { get; set; }
     public int CategoryId { get; set; }
     public Category Category { get; set; } = null!;
+    public int? BrandId { get; set; }
+    public Brand? Brand { get; set; }
+    public string? PackageSize { get; set; }
+    public string? SaleUnit { get; set; }
+    public string Currency { get; set; } = "VND";
     public List<ProductVariant> Variants { get; set; } = [];
 }

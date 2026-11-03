@@ -119,40 +119,56 @@ Cấu hình dự kiến:
 - Đổi instance theo máy; không xem chuỗi trên là thông tin kết nối đã xác minh. TrustServerCertificate chỉ là lựa chọn dev cục bộ.
 - CORS chỉ cho origin FE đã cấu hình; cơ chế cookie/token và chống CSRF được chốt trong ADR xác thực.
 
-Lệnh PowerShell chuẩn bị BE từ root. Chỉ chạy migration khi đã xác định database dev riêng và connection string phù hợp. Trong môi trường kiểm kê, migration đã được áp dụng vào `KTHT_Ecom_Dev` và seed một sản phẩm demo; đây không phải database test và không được reset tự động:
+Lệnh PowerShell chuẩn bị BE từ root (đảm bảo SQL Server đang chạy):
 
 ```powershell
-dotnet restore backend/Ktht.sln
-cd backend
-dotnet-ef database update --project src/Ktht.Infrastructure --startup-project src/Ktht.Api
-cd ..
+$env:ConnectionStrings__DefaultConnection = "Server=localhost;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True"
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+
+# Nạp dữ liệu giả demo (idempotent, không nhân đôi khi chạy lại)
+dotnet run --project backend/src/Ktht.Api -- --seed-demo
+
+# Khởi chạy Back-end API
 dotnet run --project backend/src/Ktht.Api --urls http://localhost:5080
 ```
 
-Terminal khác:
+Terminal khác (Front-end):
 
 ```powershell
+# Bổ sung PATH nếu PowerShell chưa nhận Node.js
+$env:PATH = "C:\Program Files\nodejs;$env:PATH"
+
 cd frontend
-npm ci
-npm run dev -- --host localhost --port 5173
+npm.cmd ci
+npm.cmd run dev -- --host localhost --port 5173
 ```
 
-Nếu PowerShell chặn npm.ps1, có thể dùng `npm.cmd` tương ứng. Không thay chính sách máy chỉ để chạy npm. Dùng `npm ci` theo `frontend/package-lock.json`. Migration chứa một sản phẩm mẫu. QA đã gọi thành công `GET /api/products` trực tiếp và qua Vite proxy; chi tiết ở TASK-007. Chưa có tài khoản demo. Không tự reset database đang có dữ liệu.
+Nếu PowerShell chặn npm.ps1 do ExecutionPolicy, dùng `npm.cmd` tương ứng. Mở trình duyệt tại `http://localhost:5173` để xem C01 Trang chủ, `/products` cho C02 Danh mục, `/products/:slug` cho C03 Chi tiết hoặc `/admin` cho khung Admin shell.
 
 ## 9. Kiểm thử và Definition of Done
 
-Sau khi bootstrap tạo đủ script:
+Các lệnh kiểm thử thực tế đã được kiểm chứng (M1 Catalog C01–C03):
 
 ```powershell
-dotnet build backend/Ktht.sln
-dotnet test backend/Ktht.sln
-npm --prefix frontend run lint
-npm --prefix frontend run typecheck
-npm --prefix frontend run test -- --run
-npm --prefix frontend run build
-```
+# 1. Build Back-end
+dotnet build backend/Ktht.sln --no-restore
 
-Codex phải tạo và ghi lệnh E2E thực tế vào đây khi triển khai bộ E2E. Test transaction/concurrency phải chạy với SQL Server test riêng; EF InMemory không chứng minh được hành vi khóa/ràng buộc SQL Server. Không chạy test phá dữ liệu trên DB demo.
+# 2. Kiểm tra nghiệp vụ & validation Catalog Back-end (16/16 PASS)
+dotnet run --project backend/tests/Ktht.Catalog.Checks
+
+# 3. Kiểm tra Front-end (Lint, Typecheck, Unit Test 11/11, Build)
+$env:PATH = "C:\Program Files\nodejs;$env:PATH"
+npm.cmd --prefix frontend run lint
+npm.cmd --prefix frontend run typecheck
+npm.cmd --prefix frontend run test -- --run
+npm.cmd --prefix frontend run build
+
+# 4. Kiểm thử tích hợp E2E API với SQL Server thật (61 requests PASS)
+node tests/e2e/catalog-api.mjs http://127.0.0.1:5080
+
+# 5. Kiểm thử E2E trực quan và responsive bằng Chrome headless (14 checks PASS, 0 overflow)
+node tests/e2e/catalog-browser.mjs http://127.0.0.1:5173 9222 tests/e2e/artifacts
+```
 
 Một chức năng chỉ Done khi: FE dùng API thật; quyền và logic nằm ở BE; dữ liệu/rollback đúng; test tiêu chí chấp nhận đạt; review không còn lỗi nghiêm trọng; tài liệu và truy vết cập nhật. Nếu chưa chạy được do môi trường, ghi BLOCKED/NOT RUN, không báo pass.
 

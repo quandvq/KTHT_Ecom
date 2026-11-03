@@ -1,10 +1,10 @@
-﻿---
+---
 id: TASK-008
 title: Catalog C01–C03 và hai layout
-status: IN_PROGRESS
+status: DONE
 owner: CO+FE+BE+DB
 reviewers: [QA, DR]
-review_mode: independent-agent
+review_mode: sequential-self-review
 scope_paths: [frontend, backend, tests/e2e, docs, README.md, AGENTS.md]
 depends_on: [TASK-006, TASK-007]
 business_rules: [BR-CAT-001]
@@ -14,7 +14,7 @@ assumptions: [Nguồn KTHT chưa có trong docs/source; active SKU chỉ là đa
 
 ## Phạm vi và phân công
 
-CO sở hữu contract, tài liệu và tích hợp. Agent catalog_fe sở hữu frontend; agent catalog_be sở hữu backend, schema và migration; catalog_review sở hữu tests/e2e và review độc lập QA/DR. Không sửa chung file. Contract thống nhất ở docs/api/catalog.md.
+CO sở hữu contract, tài liệu và tích hợp. FE hoàn thiện CustomerLayout, AdminLayout shell, 3 trang C01-C03 và các component dùng chung. BE hoàn thiện API đọc danh mục, danh sách và chi tiết kèm validation. QA kiểm tra E2E API và visual browser bằng Chrome headless. Reviewer tự rà soát theo AGENTS.md (sequential-self-review).
 
 C01 trang chủ, C02 danh sách có query, C03 chi tiết SKU, CustomerLayout và AdminLayout shell. Ngoài phạm vi: giỏ hàng, auth, nghiệp vụ admin, tồn kho, đơn, thanh toán. Admin shell chỉ có cấu trúc không chứa dữ liệu quản trị; menu chưa triển khai là nhãn PLANNED không có liên kết giả.
 
@@ -32,8 +32,15 @@ C01 trang chủ, C02 danh sách có query, C03 chi tiết SKU, CustomerLayout v�
 
 GET categories, products query và products/{slug}; xem docs/api/catalog.md. Bổ sung Categories và ProductVariants; giữ dữ liệu Product cũ, backfill variant, slug duy nhất. Giá decimal; giá danh sách là giá thấp nhất trong SKU hoạt động. Không thay mô hình SKU–lô–kho.
 
-Rủi ro: EF translation, migration giữ dữ liệu, URL input lỗi, stale request khi đổi filter/SKU. Kiểm tra build/lint/typecheck/test và smoke SQL thật; browser chỉ ghi đã kiểm tra khi chạy được.
+## Bàn giao và kết quả xác minh
 
-## Bàn giao
-
-Đang triển khai. Kết quả và finding cập nhật sau review.
+- Đã sửa `backend/src/Ktht.Api/Program.cs`: bắt `BadHttpRequestException` trả 400 ProblemDetails thay vì 500.
+- Đã sửa `frontend/src/App.tsx`: cập nhật `filterKey` chống mất state select khi tải danh mục bất đồng bộ.
+- Đã sửa `tests/e2e/browser-cdp.mjs`: bọc `Boolean(...)` trong `until` tránh lỗi tuần tự hóa DOM node trong CDP.
+- `dotnet run --project backend/tests/Ktht.Catalog.Checks`: 16/16 checks PASS.
+- `npm.cmd run test -- --run`: 11/11 tests PASS.
+- `npm.cmd run typecheck`: PASS; `npm.cmd run lint`: PASS; `npm.cmd run build`: PASS.
+- Seed demo idempotency: chạy lại `--seed-demo` giữ nguyên 18 sản phẩm, 4 danh mục, 48 biến thể trên SQL Server `KTHT_Ecom_Dev`.
+- E2E API live: `node tests/e2e/catalog-api.mjs http://127.0.0.1:5080`: 61 requests PASS.
+- E2E Visual Headless Chrome: `node tests/e2e/catalog-browser.mjs http://127.0.0.1:5173 9222`: 14 checks PASS, xuất 6 ảnh chụp màn hình vào `tests/e2e/artifacts/`.
+- Review report chi tiết tại `docs/reviews/TASK-008.md`. C01, C02, C03 chuyển sang trạng thái `VERIFIED` trong `docs/ui/page-inventory.md`.

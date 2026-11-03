@@ -5,7 +5,7 @@ Nguồn: README.md và AGENTS.md. Nghiệp vụ chỉ là đề xuất cho đế
 | Mốc | Nội dung và kết quả | Phụ thuộc | Owner | Reviewer | Trạng thái |
 | --- | --- | --- | --- | --- | --- |
 | M0 | Kiểm kê, use case, giả định/BR, trạng thái, quyền, API, ADR và kế hoạch kiểm thử | Nguồn KTHT để xác nhận | CO/BA/SA | DR/DB/QA/SEC | Tạm thời; chờ nguồn |
-| M1 | FE/BE/SQL Server, đọc sản phẩm, xác thực, migration và seed | M0 cho từng phần; môi trường | BE/FE/DB | QA/SEC/DX | Đang bootstrap; xem TASK-002 |
+| M1 | FE/BE/SQL Server, đọc sản phẩm, xác thực, migration và seed | M0 cho từng phần; môi trường | BE/FE/DB | QA/SEC/DX | IN_PROGRESS — Catalog read DONE (TASK-007); C01-C03 IN_PROGRESS (TASK-008); Auth/RBAC chưa có |
 | M2 | SKU, giỏ hàng, đặt đơn và giữ hàng nguyên tử | M1, quy tắc tồn và test SQL | BE/FE/DB | DR/QA | TODO |
 | M3 | Xác nhận, xuất kho, giao mô phỏng, hủy | M2, state table | BE/FE | DR/QA | TODO |
 | M4 | Hạn mức kênh, đơn sàn, retry và đối soát | M2–M3, chính sách kênh | INT/BE/DB | DR/QA | TODO |
@@ -18,9 +18,9 @@ README ưu tiên M1–M3 nhưng demo tối thiểu còn yêu cầu trường h�
 
 | Slice | Man hinh | Dependency | Owner | Reviewer | Trang thai |
 | --- | --- | --- | --- | --- | --- |
-| M1-A | Auth/RBAC contract va shared layouts | ADR auth, identity schema, 401/403/404 | SA+BE+FE | SEC+QA | PLANNED |
-| M1-B | C02 doc danh muc phan trang | `GET /api/products`, TASK-007 | FE+BE | QA | IN_PROGRESS — read slice da duoc QA kiem tra runtime; catalog contract day du van pending |
-| M1-C | C01, C03 va catalog query/detail contract | category/SKU/slug/search/filter/sort | FE+BE+DB | BA+QA | PLANNED |
+| M1-A | Auth/RBAC contract va shared layouts | ADR auth, identity schema, 401/403/404 | SA+BE+FE | SEC+QA | PLANNED — blocker M1 Done; cần ADR-002 chốt; sẽ là TASK-009 |
+| M1-B | C02 doc danh muc phan trang | `GET /api/products`, TASK-007 | FE+BE | QA | DONE (partial) — read slice da duoc QA kiem tra runtime; catalog contract day du van pending |
+| M1-C | C01, C03 va catalog query/detail contract | category/SKU/slug/search/filter/sort | FE+BE+DB | BA+QA | IN_PROGRESS — TASK-008; FE co DetailPage+FilterBar; BE co /products/{slug} |
 | M2-A | C04-C06, C10-C11, A05-A06, A09, A12 | OrderItem, reservation SKU-lo-kho, state table | FE+BE+DB | DR+QA+SEC | PLANNED |
 | M3-A | A10-A11, A15-A16, A23 | fulfillment/payment contracts | FE+BE+DB+INT | DR+QA | PLANNED |
 | M4-A | A13-A14, A27 | quota allocation, inbox/outbox, simulated adapters | INT+BE+DB+FE | DR+QA+SEC | PLANNED |
