@@ -161,3 +161,9 @@ Báo cáo cuối task ngắn gọn: đã làm gì; ai thực hiện/review và c
 ## 11. Công việc đầu tiên khi repo mới
 
 CO kiểm kê file, runtime và nguồn; BA tạo danh sách quy tắc/giả định; SA chốt ADR stack và auth; DB đề xuất schema bám ERD; QA lập test cho đặt hàng/giữ hàng trước code. Sau đó bootstrap skeleton, migration/seed tối thiểu và vertical slice đọc sản phẩm. Chưa có nguồn KTHT thì chỉ coi thiết kế là provisional, không tuyên bố khớp báo cáo cuối.
+
+## 12. Register gia dinh dang ap dung
+
+- **TASK-006 / 40 man hinh:** `docs/source/` hien chi co `.gitkeep`; cac contract chua co ngoai `GET /api/products` la `PLANNED`, khong duoc coi la API/screen da ton tai.
+- **Trang thai nghiem thu:** Landing About us hien tai khong duoc tinh la C01; danh muc trang va chi tiet gia dinh tai `docs/ui/page-inventory.md`, `docs/ui/sitemap.md`, `docs/ui/user-flows.md` va task card phai duoc cap nhat khi co nguon KTHT/API that.
+- **Tham chieu:** Chi tiet gia dinh, owner/reviewer va anh huong cua ke hoach nam trong `docs/tasks/TASK-006.md`; finding implementation duoc theo doi trong `docs/reviews/TASK-006.md` va backlog M1-M6.

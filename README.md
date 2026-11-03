@@ -4,7 +4,7 @@
 
 Dự án môn Kiến trúc hệ thống UEH: hiện thực hóa quy trình E-commerce bằng website có Front-end, Back-end và SQL Server cục bộ. Mục tiêu là chứng minh luồng nghiệp vụ, tính nhất quán dữ liệu và sự phối hợp giữa bán hàng, kho, giao vận, CSKH.
 
-**Trạng thái ban đầu:** bộ tài liệu khởi tạo, chưa có mã nguồn ứng dụng. Các thư mục, endpoint, script và lệnh bên dưới là quy ước triển khai; chỉ chạy sau khi Codex đã tạo thành phần tương ứng. Không xem danh sách chức năng là bằng chứng chức năng đã hoàn thành.
+**Trạng thái hiện tại:** đã khởi tạo tài liệu M0 tạm thời và bộ khung M1 cho danh mục sản phẩm. M0 chưa được xác nhận theo nguồn KTHT; M1 chưa hoàn tất đăng nhập, phân quyền và kiểm thử tích hợp FE–BE–SQL Server. Theo dõi chi tiết tại [backlog](docs/backlog.md) và [TASK-002](docs/tasks/TASK-002.md). Các file `.gitkeep` chỉ giữ thư mục trong Git.
 
 Tài liệu KTHT/ERD/BPMN đầy đủ chưa được đính kèm vào repository tại thời điểm soạn. Nhóm đặt bản đã chốt vào `docs/source/`; mọi khác biệt với đề xuất này phải được ghi nhận trước khi sửa thiết kế. Không suy đoán rằng tên bảng dự kiến đã trùng ERD cuối cùng.
 
@@ -108,23 +108,24 @@ Prompt khởi động gợi ý:
 
 ## 8. Chạy cục bộ sau khi bootstrap
 
-Cần có Node.js, .NET SDK đúng phiên bản đã pin, SQL Server đang chạy, SSMS tùy chọn và Git. Bootstrap phải tạo các project/script dưới đây trước khi hướng dẫn chạy; sửa README nếu tên thực tế khác.
+Cần có Node.js, .NET SDK đúng phiên bản đã pin, SQL Server đang chạy, SSMS tùy chọn và Git. M1 chưa hoàn tất. Node.js/npm và lockfile frontend đã có trong môi trường kiểm kê; nếu terminal cũ chưa nhận PATH mới, mở terminal mới hoặc dùng đường dẫn Node.js đã cài. `frontend/package-lock.json` là lockfile cần dùng với `npm ci`. Kết quả thực tế của slice hiện có được ghi ở TASK-007, không suy diễn rằng toàn bộ M1 đã đạt.
 
 Cấu hình dự kiến:
 
 - FE: `http://localhost:5173`; BE: `http://localhost:5080` cho demo local.
 - FE `.env.local`: `VITE_API_BASE_URL=http://localhost:5080/api` (không chứa bí mật).
 - BE: `ConnectionStrings__DefaultConnection` qua biến môi trường hoặc .NET user-secrets.
-- Ví dụ cấu hình dev: `Server=localhost\SQLEXPRESS;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True`.
+- Ví dụ cấu hình dev: `Server=localhost;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True`.
 - Đổi instance theo máy; không xem chuỗi trên là thông tin kết nối đã xác minh. TrustServerCertificate chỉ là lựa chọn dev cục bộ.
 - CORS chỉ cho origin FE đã cấu hình; cơ chế cookie/token và chống CSRF được chốt trong ADR xác thực.
 
-Lệnh PowerShell dự kiến từ root, sau khi M1 hoàn tất:
+Lệnh PowerShell chuẩn bị BE từ root. Chỉ chạy migration khi đã xác định database dev riêng và connection string phù hợp. Trong môi trường kiểm kê, migration đã được áp dụng vào `KTHT_Ecom_Dev` và seed một sản phẩm demo; đây không phải database test và không được reset tự động:
 
 ```powershell
 dotnet restore backend/Ktht.sln
-dotnet tool restore
-dotnet ef database update --project backend/src/Ktht.Infrastructure --startup-project backend/src/Ktht.Api
+cd backend
+dotnet-ef database update --project src/Ktht.Infrastructure --startup-project src/Ktht.Api
+cd ..
 dotnet run --project backend/src/Ktht.Api --urls http://localhost:5080
 ```
 
@@ -136,7 +137,7 @@ npm ci
 npm run dev -- --host localhost --port 5173
 ```
 
-Nếu PowerShell chặn npm.ps1, có thể dùng `npm.cmd` tương ứng. Không thay chính sách máy chỉ để chạy npm. Lệnh seed và tài khoản demo phải được người triển khai bổ sung sau khi seed tồn tại; chỉ dùng dữ liệu giả, không commit mật khẩu thật. Seed chạy lại không nhân đôi dữ liệu. Không tự reset database đang có dữ liệu.
+Nếu PowerShell chặn npm.ps1, có thể dùng `npm.cmd` tương ứng. Không thay chính sách máy chỉ để chạy npm. Dùng `npm ci` theo `frontend/package-lock.json`. Migration chứa một sản phẩm mẫu. QA đã gọi thành công `GET /api/products` trực tiếp và qua Vite proxy; chi tiết ở TASK-007. Chưa có tài khoản demo. Không tự reset database đang có dữ liệu.
 
 ## 9. Kiểm thử và Definition of Done
 
