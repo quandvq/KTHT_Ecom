@@ -1,9 +1,9 @@
-import { useEffect, useState, type ReactNode, type FormEvent } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type FormEvent } from 'react'
 import {
   ApiError, getJson, postJson, safeStorageGet, safeStorageSet, safeStorageRemove,
   type Category, type Brand, type Product, type ProductPage, type ProductDetail,
   type User, type CartItem, type Order, type DashboardStats, type InventoryBalance,
-  type ReturnRequest, type SupportTicket
+  type ReturnRequest, type SupportTicket, type PromotionValidation
 } from './products'
 import './styles/catalog.css'
 
@@ -43,6 +43,13 @@ export function Link({ href, children, className, style }: { href: string; child
 function useResource<T>(path: string) {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<{ path: string; data?: T; error?: ApiError }>({ path })
+
+  useEffect(() => {
+    const handleAuthChange = () => setAttempt(v => v + 1)
+    window.addEventListener('ktht_auth_change', handleAuthChange)
+    return () => window.removeEventListener('ktht_auth_change', handleAuthChange)
+  }, [])
+
   useEffect(() => {
     const controller = new AbortController()
     setState({ path })
@@ -71,7 +78,26 @@ export function ErrorState({ retry }: { retry: () => void }) {
 // ==========================================
 // AUTH & CART HOOKS
 // ==========================================
-function useAuth() {
+type AuthStore = {
+  user: User | null
+  saveAuth: (token: string, user: User) => void
+  logout: () => void
+}
+
+type CartStore = {
+  items: CartItem[]
+  addItem: (item: CartItem) => void
+  updateQuantity: (sku: string, quantity: number) => void
+  removeItem: (sku: string) => void
+  clearCart: () => void
+  totalCount: number
+  totalAmount: number
+}
+
+const AuthContext = createContext<AuthStore | null>(null)
+const CartContext = createContext<CartStore | null>(null)
+
+function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     try {
       const stored = safeStorageGet('ktht_auth_user')
@@ -79,23 +105,6 @@ function useAuth() {
     } catch { return null }
   })
 
-  function saveAuth(token: string, userData: User) {
-    safeStorageSet('ktht_auth_token', token)
-    safeStorageSet('ktht_auth_user', JSON.stringify(userData))
-    setUser(userData)
-  }
-
-  function logout() {
-    safeStorageRemove('ktht_auth_token')
-    safeStorageRemove('ktht_auth_user')
-    setUser(null)
-    navigate('/')
-  }
-
-  return { user, saveAuth, logout }
-}
-
-function useCart() {
   const [items, setItems] = useState<CartItem[]>(() => {
     try {
       const stored = safeStorageGet('ktht_cart')
@@ -103,40 +112,66 @@ function useCart() {
     } catch { return [] }
   })
 
-  function saveItems(newItems: CartItem[]) {
-    setItems(newItems)
+  function saveAuth(token: string, userData: User) {
+    safeStorageSet('ktht_auth_token', token)
+    safeStorageSet('ktht_auth_user', JSON.stringify(userData))
+    setUser(userData)
+    window.dispatchEvent(new Event('ktht_auth_change'))
+  }
+
+  function logout() {
+    safeStorageRemove('ktht_auth_token')
+    safeStorageRemove('ktht_auth_user')
+    setUser(null)
+    window.dispatchEvent(new Event('ktht_auth_change'))
+    navigate('/')
+  }
+
+  function persistItems(newItems: CartItem[]) {
     safeStorageSet('ktht_cart', JSON.stringify(newItems))
+    return newItems
   }
 
   function addItem(item: CartItem) {
-    const existing = items.find(i => i.sku === item.sku)
-    if (existing) {
-      saveItems(items.map(i => i.sku === item.sku ? { ...i, quantity: i.quantity + item.quantity } : i))
-    } else {
-      saveItems([...items, item])
-    }
+    setItems(current => persistItems(current.some(i => i.sku === item.sku)
+      ? current.map(i => i.sku === item.sku ? { ...i, quantity: i.quantity + item.quantity } : i)
+      : [...current, item]))
   }
 
   function updateQuantity(sku: string, quantity: number) {
-    if (quantity <= 0) {
-      saveItems(items.filter(i => i.sku !== sku))
-    } else {
-      saveItems(items.map(i => i.sku === sku ? { ...i, quantity } : i))
-    }
+    setItems(current => persistItems(quantity <= 0
+      ? current.filter(i => i.sku !== sku)
+      : current.map(i => i.sku === sku ? { ...i, quantity } : i)))
   }
 
   function removeItem(sku: string) {
-    saveItems(items.filter(i => i.sku !== sku))
+    setItems(current => persistItems(current.filter(i => i.sku !== sku)))
   }
 
   function clearCart() {
-    saveItems([])
+    setItems(persistItems([]))
   }
 
   const totalCount = items.reduce((sum, i) => sum + i.quantity, 0)
   const totalAmount = items.reduce((sum, i) => sum + i.price * i.quantity, 0)
 
-  return { items, addItem, updateQuantity, removeItem, clearCart, totalCount, totalAmount }
+  return <AuthContext.Provider value={{ user, saveAuth, logout }}>
+    <CartContext.Provider value={{ items, addItem, updateQuantity, removeItem, clearCart, totalCount, totalAmount }}>
+      {children}
+    </CartContext.Provider>
+  </AuthContext.Provider>
+}
+
+function useAuth() {
+  const context = useContext(AuthContext)
+  if (!context) throw new Error('useAuth must be used inside StoreProvider')
+  return context
+}
+
+function useCart() {
+  const context = useContext(CartContext)
+  if (!context) throw new Error('useCart must be used inside StoreProvider')
+  return context
 }
 
 // ==========================================
@@ -175,7 +210,7 @@ export function CustomerLayout({ children, categories, query }: { children: Reac
   return (
     <div className="shop">
       <a className="shop-skip" href="#main-content">Đến nội dung</a>
-      <div className="shop-announcement">KTHT E-commerce · Cửa hàng demo đa kênh dược phẩm & tiêu dùng</div>
+      <div className="shop-announcement">KTHT E-commerce · Cửa hàng demo dược phẩm & tiêu dùng</div>
       <header className="shop-header shop-container">
         <Link href="/" className="shop-brand">
           <span aria-hidden="true">K</span>KTHT<span className="shop-brand-sub">E-commerce</span>
@@ -188,7 +223,9 @@ export function CustomerLayout({ children, categories, query }: { children: Reac
           </Link>
           {user ? (
             <div>
-              <strong>{user.fullName}</strong>
+              <Link href="/account/orders" style={{ color: 'inherit', textDecoration: 'none' }}>
+                <strong>{user.fullName}</strong>
+              </Link>
               <small>
                 {user.role !== 'Customer' && <Link href="/admin">Quản trị ({user.role}) · </Link>}
                 <Link href="/account/orders">Đơn hàng</Link> · <button onClick={logout} style={{ background: 'none', border: 0, color: '#dc2626', padding: 0, font: 'inherit', cursor: 'pointer' }}>Đăng xuất</button>
@@ -217,8 +254,8 @@ export function CustomerLayout({ children, categories, query }: { children: Reac
       <footer className="shop-footer">
         <div className="shop-container">
           <strong>KTHT E-commerce</strong>
-          <p>Hệ thống quản lý hoạt động đa kênh: Website, Shopee, Lazada, TikTok.</p>
-          <p>Đồng bộ tồn kho real-time, giữ hàng nguyên tử và đối soát minh bạch.</p>
+          <p>Mua sắm trực tuyến với thông tin sản phẩm và giá được kiểm tra tại máy chủ.</p>
+          <p>Giữ hàng nguyên tử và theo dõi đơn hàng minh bạch.</p>
           <Link href="/products">Khám phá danh mục sản phẩm</Link>
           <span>© 2026 KTHT E-commerce. Nền tảng thương mại điện tử UEH.</span>
         </div>
@@ -248,10 +285,16 @@ function AuthModal({ mode, onClose }: { mode: 'login' | 'register'; onClose: () 
         const res = await postJson<{ token: string; user: User }>('/auth/login', { email, password })
         saveAuth(res.token, res.user)
         onClose()
+        if (res.user.role !== 'Customer') {
+          navigate('/admin')
+        } else if (window.location.pathname === '/' || window.location.pathname === '/account') {
+          navigate('/account/orders')
+        }
       } else {
         const res = await postJson<{ token: string; user: User }>('/auth/register', { email, password, fullName, phoneNumber: phone })
         saveAuth(res.token, res.user)
         onClose()
+        navigate('/account/orders')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Thao tác không thành công.')
@@ -351,7 +394,7 @@ function HomePage({ categories }: { categories: Category[] }) {
         </div>
         <div className="shop-hero-art" role="img" aria-label="Hình minh họa danh mục">
           <span>KTHT</span>
-          <small>Thương mại điện tử đa kênh</small>
+          <small>Cửa hàng trực tuyến KTHT</small>
         </div>
       </section>
       <section className="shop-section">
@@ -380,13 +423,33 @@ function HomePage({ categories }: { categories: Category[] }) {
 export function FilterBar({ params, categories }: { params: URLSearchParams; categories: Category[] }) {
   const brandsResource = useResource<Brand[]>('/brands')
   const [error, setError] = useState('')
+  const paramsKey = params.toString()
+  const [filters, setFilters] = useState(() => ({
+    q: params.get('q') || '',
+    category: params.get('category') || '',
+    brand: params.get('brand') || '',
+    sort: params.get('sort') || 'featured',
+    minPrice: params.get('minPrice') || '',
+    maxPrice: params.get('maxPrice') || ''
+  }))
+
+  useEffect(() => {
+    const current = new URLSearchParams(paramsKey)
+    setFilters(prev => ({
+      q: current.get('q') || '',
+      category: current.get('category') || '',
+      brand: current.get('brand') || '',
+      sort: current.get('sort') || prev.sort || 'featured',
+      minPrice: current.get('minPrice') || '',
+      maxPrice: current.get('maxPrice') || ''
+    }))
+  }, [paramsKey])
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const data = new FormData(event.currentTarget)
     const next = new URLSearchParams()
     for (const key of ['q', 'category', 'brand', 'sort', 'minPrice', 'maxPrice']) {
-      const value = String(data.get(key) || '').trim()
+      const value = (filters[key as keyof typeof filters] || '').trim()
       if (value) next.set(key, value)
     }
     const minimum = next.get('minPrice'), maximum = next.get('maxPrice')
@@ -403,10 +466,10 @@ export function FilterBar({ params, categories }: { params: URLSearchParams; cat
   return (
     <form className="shop-filters" onSubmit={submit}>
       <label>Từ khóa
-        <input name="q" type="search" defaultValue={params.get('q') || ''} maxLength={200} placeholder="Tên sản phẩm, SKU..." />
+        <input name="q" type="search" value={filters.q} onChange={event => setFilters(current => ({ ...current, q: event.target.value }))} maxLength={200} placeholder="Tên sản phẩm, SKU..." />
       </label>
       <label>Danh mục
-        <select name="category" defaultValue={params.get('category') || ''}>
+        <select name="category" value={filters.category} onChange={event => setFilters(current => ({ ...current, category: event.target.value }))}>
           <option value="">Tất cả danh mục</option>
           {params.get('category') && !categories.some(category => category.slug === params.get('category')) && (
             <option value={params.get('category')!}>Danh mục không tồn tại</option>
@@ -417,7 +480,7 @@ export function FilterBar({ params, categories }: { params: URLSearchParams; cat
         </select>
       </label>
       <label>Thương hiệu
-        <select name="brand" defaultValue={params.get('brand') || ''}>
+        <select name="brand" value={filters.brand} onChange={event => setFilters(current => ({ ...current, brand: event.target.value }))}>
           <option value="">Tất cả thương hiệu</option>
           {brands.map(brand => (
             <option key={brand.id} value={brand.slug}>{brand.name}</option>
@@ -425,13 +488,13 @@ export function FilterBar({ params, categories }: { params: URLSearchParams; cat
         </select>
       </label>
       <label>Giá từ (đ)
-        <input name="minPrice" type="number" min="0" step="0.01" defaultValue={params.get('minPrice') || ''} />
+        <input name="minPrice" type="number" min="0" step="0.01" value={filters.minPrice} onChange={event => setFilters(current => ({ ...current, minPrice: event.target.value }))} />
       </label>
       <label>Giá đến (đ)
-        <input name="maxPrice" type="number" min="0" step="0.01" defaultValue={params.get('maxPrice') || ''} />
+        <input name="maxPrice" type="number" min="0" step="0.01" value={filters.maxPrice} onChange={event => setFilters(current => ({ ...current, maxPrice: event.target.value }))} />
       </label>
       <label>Sắp xếp
-        <select name="sort" defaultValue={params.get('sort') || 'featured'}>
+        <select name="sort" value={filters.sort || params.get('sort') || 'featured'} onChange={event => setFilters(current => ({ ...current, sort: event.target.value }))}>
           <option value="featured">Nổi bật</option>
           <option value="name">Tên A–Z</option>
           <option value="price-asc">Giá tăng dần</option>
@@ -465,13 +528,12 @@ function ProductsPage({ params, categories }: { params: URLSearchParams; categor
   if (!query.has('page')) query.set('page', '1')
   if (!query.has('pageSize')) query.set('pageSize', '12')
   const resource = useResource<ProductPage>('/products?' + query)
-  const filterKey = `${params.toString()}-${categories.map(c => c.id).join('-')}`
 
   return (
     <>
       <p className="shop-eyebrow">DANH MỤC KTHT</p>
       <h1>Sản phẩm</h1>
-      <FilterBar key={filterKey} params={params} categories={categories} />
+      <FilterBar params={params} categories={categories} />
       {resource.error ? <ErrorState retry={resource.retry} /> : !resource.data ? <LoadingState /> : (
         <>
           <p className="shop-result-count">{resource.data.totalCount} sản phẩm phù hợp</p>
@@ -680,6 +742,18 @@ function CheckoutPage() {
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [promotionInput, setPromotionInput] = useState('')
+  const [promotion, setPromotion] = useState<PromotionValidation | null>(null)
+  const [promotionError, setPromotionError] = useState('')
+  const [promotionLoading, setPromotionLoading] = useState(false)
+  const cartSignature = items.map(item => `${item.sku}:${item.quantity}`).sort().join('|')
+  const idempotencyKey = useRef(`IDEM-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
+
+  useEffect(() => {
+    setPromotion(null)
+    setPromotionError('')
+    idempotencyKey.current = `IDEM-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }, [cartSignature])
 
   // Fetch saved default address
   useEffect(() => {
@@ -696,6 +770,35 @@ function CheckoutPage() {
     }
   }, [user])
 
+  async function applyPromotion() {
+    const code = promotionInput.trim().toUpperCase()
+    if (!code) {
+      setPromotionError('Vui lòng nhập mã khuyến mãi.')
+      return
+    }
+    setPromotionLoading(true)
+    setPromotionError('')
+    try {
+      const result = await postJson<PromotionValidation>('/promotions/validate', {
+        code,
+        items: items.map(item => ({ sku: item.sku, quantity: item.quantity }))
+      })
+      setPromotion(result)
+      setPromotionInput(result.code)
+    } catch (err) {
+      setPromotion(null)
+      setPromotionError(err instanceof Error ? err.message : 'Mã khuyến mãi không hợp lệ.')
+    } finally {
+      setPromotionLoading(false)
+    }
+  }
+
+  function removePromotion() {
+    setPromotion(null)
+    setPromotionInput('')
+    setPromotionError('')
+  }
+
   if (items.length === 0) {
     return (
       <div className="shop-state">
@@ -710,8 +813,6 @@ function CheckoutPage() {
     setError('')
     setSubmitting(true)
 
-    const idempotencyKey = 'IDEM-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8)
-
     try {
       const res = await postJson<{ message: string; order: { id: number; orderCode: string } }>('/orders', {
         customerName,
@@ -720,8 +821,9 @@ function CheckoutPage() {
         shippingAddress,
         paymentMethod,
         note,
+        promotionCode: promotion?.code,
         items: items.map(i => ({ sku: i.sku, quantity: i.quantity }))
-      }, idempotencyKey)
+      }, idempotencyKey.current)
 
       clearCart()
       navigate(`/checkout/result/${res.order.orderCode}`)
@@ -790,10 +892,34 @@ function CheckoutPage() {
               </div>
             ))}
           </div>
+          <div style={{ borderBlock: '1px solid var(--shop-border)', paddingBlock: 16, marginBottom: 16 }}>
+            <label className="shop-field" htmlFor="promotion-code">Mã khuyến mãi</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                id="promotion-code"
+                value={promotionInput}
+                onChange={event => { setPromotionInput(event.target.value.toUpperCase()); if (promotion) setPromotion(null) }}
+                disabled={promotionLoading}
+                maxLength={50}
+                placeholder="Nhập một mã"
+              />
+              {promotion ? (
+                <button type="button" className="btn-secondary" onClick={removePromotion}>Bỏ mã</button>
+              ) : (
+                <button type="button" onClick={applyPromotion} disabled={promotionLoading || !promotionInput.trim()}>
+                  {promotionLoading ? 'Đang kiểm tra…' : 'Áp dụng'}
+                </button>
+              )}
+            </div>
+            {promotionError && <p role="alert" style={{ color: '#b91c1c', fontSize: 13 }}>{promotionError}</p>}
+            {promotion && <p role="status" style={{ color: '#15803d', fontSize: 13 }}>Đã áp dụng {promotion.code}: {promotion.description}</p>}
+            <small>Mỗi đơn hàng chỉ áp dụng một mã. Mã sẽ được kiểm tra lại khi đặt hàng.</small>
+          </div>
           <hr style={{ border: 0, borderTop: '1px solid var(--shop-border)', marginBottom: 16 }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, marginBottom: 20 }}>
-            <span>Tổng tiền:</span>
-            <strong style={{ color: 'var(--shop-primary)' }}>{money(totalAmount)}</strong>
+          <div style={{ display: 'grid', gap: 8, marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Tạm tính:</span><strong>{money(promotion?.subtotal ?? totalAmount)}</strong></div>
+            {promotion && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d' }}><span>Giảm giá ({promotion.code}):</span><strong>−{money(promotion.discountAmount)}</strong></div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18 }}><span>Tổng tiền:</span><strong style={{ color: 'var(--shop-primary)' }}>{money(promotion?.totalAmount ?? totalAmount)}</strong></div>
           </div>
           <button type="submit" disabled={submitting} style={{ width: '100%', padding: 14, fontSize: 16 }}>
             {submitting ? 'Đang tạo đơn & giữ tồn kho…' : 'Xác nhận Đặt hàng →'}
@@ -851,7 +977,8 @@ function AccountOrdersPage() {
   if (resource.error) return <ErrorState retry={resource.retry} />
   if (!resource.data) return <LoadingState />
 
-  const orders = resource.data
+  const rawOrders = resource.data
+  const orders: Order[] = Array.isArray(rawOrders) ? rawOrders : (Array.isArray((rawOrders as { items?: Order[] })?.items) ? (rawOrders as { items: Order[] }).items : [])
   return (
     <>
       <nav className="shop-breadcrumb"><Link href="/">Trang chủ</Link> / <span>Đơn hàng của tôi</span></nav>
@@ -875,17 +1002,17 @@ function AccountOrdersPage() {
             <tbody>
               {orders.map(order => (
                 <tr key={order.id}>
-                  <td><strong>{order.orderCode}</strong></td>
-                  <td>{new Date(order.createdAt).toLocaleDateString('vi-VN')}</td>
-                  <td>{order.items?.map(i => `${i.productName} (${i.quantity})`).join(', ')}</td>
-                  <td><strong>{money(order.totalAmount)}</strong></td>
-                  <td>{order.paymentMethod}</td>
+                  <td><strong>{order.orderCode || `ORD-${order.id}`}</strong></td>
+                  <td>{order.createdAt ? new Date(order.createdAt).toLocaleDateString('vi-VN') : ''}</td>
+                  <td>{order.items?.map(i => `${i.productName} (${i.quantity})`).join(', ') || '-'}</td>
+                  <td><strong>{money(order.totalAmount || 0)}</strong></td>
+                  <td>{order.paymentMethod || 'COD'}</td>
                   <td>
-                    <span className={`shop-badge badge-${order.status.toLowerCase()}`}>
-                      {order.status === 'Pending' ? 'Chờ xác nhận' :
-                       order.status === 'Confirmed' ? 'Đã xác nhận' :
+                    <span className={`shop-badge badge-${(order.status || 'Pending').toLowerCase()}`}>
+                      {order.status === 'Confirmed' ? 'Đã xác nhận' :
                        order.status === 'Shipped' ? 'Đang giao' :
-                       order.status === 'Delivered' ? 'Đã giao' : 'Đã hủy'}
+                       order.status === 'Delivered' ? 'Đã giao' :
+                       order.status === 'Cancelled' ? 'Đã hủy' : 'Chờ xác nhận'}
                     </span>
                   </td>
                   <td>
@@ -1082,7 +1209,7 @@ function AccountRequestsPage() {
   return (
     <>
       <nav className="shop-breadcrumb"><Link href="/">Trang chủ</Link> / <span>Yêu cầu hỗ trợ & Khiếu nại</span></nav>
-      <h1>Hỗ trợ khách hàng đa kênh</h1>
+      <h1>Hỗ trợ khách hàng</h1>
 
       {notice && <div style={{ padding: 14, background: '#dcfce7', color: '#15803d', borderRadius: 8, marginBottom: 20 }}>✓ {notice}</div>}
 
@@ -1142,7 +1269,7 @@ function NotFound() {
 }
 
 // ==========================================
-// ADMIN PANEL (MODULES 3, 5, 6, 7, 8, 9, 10)
+// ADMIN PANEL
 // ==========================================
 export function AdminLayout() {
   const { user, logout } = useAuth()
@@ -1155,7 +1282,7 @@ export function AdminLayout() {
           <Link href="/" className="shop-brand">KTHT</Link>
           <h2>Quản trị nội bộ</h2>
           <nav aria-label="Module quản trị">
-            {['Dashboard', 'Sản phẩm', 'Đơn hàng', 'Khách hàng', 'Kho', 'Kênh bán', 'Tích hợp', 'Vận chuyển', 'Hậu mãi', 'Thanh toán', 'Báo cáo', 'Nhân viên', 'Cấu hình', 'Mô phỏng'].map(module => (
+            {['Dashboard', 'Sản phẩm', 'Đơn hàng', 'Khách hàng', 'Kho', 'Vận chuyển', 'Hậu mãi', 'Thanh toán', 'Báo cáo', 'Nhân viên', 'Cấu hình'].map(module => (
               <span key={module} aria-disabled="true">{module}<small>Chưa triển khai</small></span>
             ))}
           </nav>
@@ -1188,7 +1315,7 @@ export function AdminLayout() {
 }
 
 function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'inventory' | 'returns' | 'tickets' | 'channels'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'inventory' | 'returns' | 'tickets'>('dashboard')
   const dashboard = useResource<DashboardStats>('/admin/dashboard')
   const inventory = useResource<InventoryBalance[]>('/admin/inventory')
   const orders = useResource<{ items: Order[] }>('/admin/orders')
@@ -1210,7 +1337,6 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
           <button className={`shop-tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>🏭 Kho & Tồn (P,Q,B,R,A,U)</button>
           <button className={`shop-tab ${activeTab === 'returns' ? 'active' : ''}`} onClick={() => setActiveTab('returns')}>🔄 Đổi trả & QC (RMA)</button>
           <button className={`shop-tab ${activeTab === 'tickets' ? 'active' : ''}`} onClick={() => setActiveTab('tickets')}>💬 CSKH & Ticket</button>
-          <button className={`shop-tab ${activeTab === 'channels' ? 'active' : ''}`} onClick={() => setActiveTab('channels')}>🌐 Đa kênh & Quota</button>
         </nav>
         <div style={{ marginTop: 40 }}>
           <button onClick={logout} className="btn-secondary btn-sm" style={{ width: '100%' }}>Đăng xuất</button>
@@ -1448,40 +1574,13 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
             </div>
           )}
 
-          {activeTab === 'channels' && (
-            <div>
-              <h1>Phân bổ Hạn mức Kênh bán (Multi-channel Quota)</h1>
-              <p>Mô phỏng tiêu thụ quota $A \to R$ tự động khi có đơn hàng từ sàn thương mại điện tử.</p>
-              <div style={{ background: 'white', padding: 24, borderRadius: 12, border: '1px solid var(--shop-border)' }}>
-                <p>Kênh hoạt động: <strong>Shopee Mall, Lazada LazMall, TikTok Shop</strong></p>
-                <button
-                  className="shop-primary"
-                  onClick={async () => {
-                    const res = await postJson<{ message: string }>('/integrations/channel-orders', {
-                      channelCode: 'SHOPEE',
-                      externalOrderId: 'SP-' + Date.now(),
-                      sku: 'KTHT-DEMO-01-S',
-                      quantity: 2,
-                      unitPrice: 25000,
-                      customerName: 'Khách Shopee Live'
-                    })
-                    alert(res.message)
-                    orders.retry()
-                    inventory.retry()
-                  }}
-                >
-                  🚀 Mô phỏng nhận đơn từ sàn Shopee (Tiêu thụ Quota A → R)
-                </button>
-              </div>
-            </div>
-          )}
         </main>
       </div>
     </div>
   )
 }
 
-export default function App() {
+function AppContent() {
   const location = useLocation()
   const [path, search = ''] = location.split('?')
   const params = new URLSearchParams(search)
@@ -1508,11 +1607,15 @@ export default function App() {
        path === '/cart' ? <CartPage /> :
        path === '/checkout' ? <CheckoutPage /> :
        orderResultCode ? <OrderResultPage orderCode={orderResultCode} /> :
-       path === '/account/orders' ? <AccountOrdersPage /> :
+       (path === '/account' || path === '/account/orders') ? <AccountOrdersPage /> :
        orderDetailCode ? <OrderDetailPage orderCode={orderDetailCode} /> :
        path === '/account/requests' ? <AccountRequestsPage /> :
        slug ? <DetailPage key={slug} slug={slug} params={params} /> :
        <NotFound />}
     </CustomerLayout>
   )
+}
+
+export default function App() {
+  return <StoreProvider><AppContent /></StoreProvider>
 }

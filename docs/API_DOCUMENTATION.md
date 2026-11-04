@@ -289,35 +289,35 @@ Authorization: Bearer <TOKEN>
 
 ---
 
-### MODULE 7 — MULTI-CHANNEL SYNCHRONIZATION
+### MODULE 7 — KHUYẾN MÃI & MÃ GIẢM GIÁ (PROMOTIONS)
+*(Đã loại bỏ chức năng kết nối sàn đa kênh theo yêu cầu dự án; chuyển đổi tập trung bán hàng trực tiếp website với hệ thống mã khuyến mãi)*
 
-#### 7.1. Phân bổ hạn mức bán cho kênh (Quota Allocation)
-- **Endpoint:** `POST /api/admin/channels/{code}/allocate`
-- **Quyền:** `Admin`
+#### 7.1. Kiểm tra và áp dụng mã khuyến mãi
+- **Endpoint:** `POST /api/promotions/validate`
+- **Quyền:** Public / Customer
 - **Request Body:**
   ```json
   {
-    "sku": "KTHT-DEMO-01-S",
-    "allocatedQuota": 15
+    "code": "SALE10-01",
+    "items": [
+      { "sku": "KTHT-DEMO-01-S", "quantity": 2 }
+    ]
   }
   ```
-- **Effect:** Tăng quota kênh $A$, giảm tồn dùng chung $U$. Kiểm tra điều kiện $U \ge \Delta A$.
-
-#### 7.2. Tiếp nhận đơn từ sàn TMĐT (Shopee / Lazada Webhook)
-- **Endpoint:** `POST /api/integrations/channel-orders`
-- **Quyền:** Server-to-Server / Admin
-- **Request Body:**
+- **Response:**
   ```json
   {
-    "channelCode": "SHOPEE",
-    "externalOrderId": "SP-99182312",
-    "sku": "KTHT-DEMO-01-S",
-    "quantity": 2,
-    "unitPrice": 25000,
-    "customerName": "Khách Shopee Live"
+    "code": "SALE10-01",
+    "description": "Giảm 10% tối đa 50.000đ",
+    "subtotal": 120000,
+    "discountAmount": 12000,
+    "totalAmount": 108000
   }
   ```
-- **Effect:** Trừ hạn mức kênh $A - 2$, tăng Reservation đơn hàng $R + 2$ nguyên tử. Tồn khả dụng $U$ không đổi.
+- **Business Rules:**
+  - Hệ thống hỗ trợ 50 mã demo phân bổ theo các mức (`SALE10-01`..`20`, `GIAM20K-01`..`15`, `GIAM50K-01`..`10`, `VIP15-01`..`05`).
+  - Mỗi đơn hàng chỉ áp dụng duy nhất 1 mã khuyến mãi.
+  - Giá và mức chiết khấu do máy chủ tính toán lại từ database, không chấp nhận frontend tự định giá.
 
 ---
 

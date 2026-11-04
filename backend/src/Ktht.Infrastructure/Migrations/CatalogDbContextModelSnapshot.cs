@@ -74,36 +74,6 @@ namespace Ktht.Infrastructure.Migrations
                     b.ToTable("Categories");
                 });
 
-            modelBuilder.Entity("Ktht.Domain.ChannelAllocation", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AllocatedQuota")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ChannelId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Sku")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChannelId", "Sku")
-                        .IsUnique();
-
-                    b.ToTable("ChannelAllocations");
-                });
-
             modelBuilder.Entity("Ktht.Domain.CustomerAddress", b =>
                 {
                     b.Property<int>("Id")
@@ -306,6 +276,10 @@ namespace Ktht.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<decimal>("DiscountAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<string>("IdempotencyKey")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -328,6 +302,17 @@ namespace Ktht.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("PromotionCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("PromotionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("ShippingAddress")
                         .IsRequired()
                         .HasMaxLength(1000)
@@ -337,6 +322,10 @@ namespace Ktht.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("SubtotalAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("TotalAmount")
                         .HasPrecision(18, 2)
@@ -350,14 +339,25 @@ namespace Ktht.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IdempotencyKey");
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("[IdempotencyKey] IS NOT NULL");
 
                     b.HasIndex("OrderCode")
                         .IsUnique();
 
+                    b.HasIndex("PromotionId");
+
                     b.HasIndex("UserId");
 
-                    b.ToTable("Orders");
+                    b.ToTable("Orders", t =>
+                        {
+                            t.HasCheckConstraint("CK_Orders_DiscountAmount", "[DiscountAmount] >= 0 AND [DiscountAmount] <= [SubtotalAmount]");
+
+                            t.HasCheckConstraint("CK_Orders_SubtotalAmount", "[SubtotalAmount] >= 0");
+
+                            t.HasCheckConstraint("CK_Orders_TotalAmount", "[TotalAmount] = [SubtotalAmount] - [DiscountAmount]");
+                        });
                 });
 
             modelBuilder.Entity("Ktht.Domain.OrderItem", b =>
@@ -577,6 +577,75 @@ namespace Ktht.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ktht.Domain.Promotion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("DiscountType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("EndsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("MaxDiscount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("MinOrderAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("StartsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UsageLimit")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UsedCount")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Promotions", t =>
+                        {
+                            t.HasCheckConstraint("CK_Promotions_DiscountType", "[DiscountType] IN ('Percent', 'Fixed')");
+
+                            t.HasCheckConstraint("CK_Promotions_MaxDiscount", "[MaxDiscount] IS NULL OR [MaxDiscount] > 0");
+
+                            t.HasCheckConstraint("CK_Promotions_MinOrderAmount", "[MinOrderAmount] >= 0");
+
+                            t.HasCheckConstraint("CK_Promotions_Usage", "[UsedCount] >= 0 AND ([UsageLimit] IS NULL OR [UsageLimit] >= 0 AND [UsedCount] <= [UsageLimit])");
+
+                            t.HasCheckConstraint("CK_Promotions_Value", "[Value] > 0 AND ([DiscountType] <> 'Percent' OR [Value] <= 100)");
+                        });
+                });
+
             modelBuilder.Entity("Ktht.Domain.ReturnItem", b =>
                 {
                     b.Property<int>("Id")
@@ -664,35 +733,6 @@ namespace Ktht.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("ReturnRequests");
-                });
-
-            modelBuilder.Entity("Ktht.Domain.SalesChannel", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique();
-
-                    b.ToTable("SalesChannels");
                 });
 
             modelBuilder.Entity("Ktht.Domain.SupportTicket", b =>
@@ -840,17 +880,6 @@ namespace Ktht.Infrastructure.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Ktht.Domain.ChannelAllocation", b =>
-                {
-                    b.HasOne("Ktht.Domain.SalesChannel", "Channel")
-                        .WithMany("Allocations")
-                        .HasForeignKey("ChannelId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Channel");
-                });
-
             modelBuilder.Entity("Ktht.Domain.CustomerAddress", b =>
                 {
                     b.HasOne("Ktht.Domain.User", "User")
@@ -875,10 +904,17 @@ namespace Ktht.Infrastructure.Migrations
 
             modelBuilder.Entity("Ktht.Domain.Order", b =>
                 {
+                    b.HasOne("Ktht.Domain.Promotion", "Promotion")
+                        .WithMany()
+                        .HasForeignKey("PromotionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Ktht.Domain.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Promotion");
 
                     b.Navigation("User");
                 });
@@ -996,11 +1032,6 @@ namespace Ktht.Infrastructure.Migrations
             modelBuilder.Entity("Ktht.Domain.ReturnRequest", b =>
                 {
                     b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("Ktht.Domain.SalesChannel", b =>
-                {
-                    b.Navigation("Allocations");
                 });
 
             modelBuilder.Entity("Ktht.Domain.SupportTicket", b =>

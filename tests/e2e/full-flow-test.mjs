@@ -208,37 +208,6 @@ check('M6 - Tồn kho SKU mục tiêu có Reservation R > 0', targetInv && targe
 check('M6 - Bất biến tồn kho U = P - Q - B - R - A >= 0', targetInv.availableStock === (targetInv.p - targetInv.q - targetInv.b - targetInv.r - targetInv.a))
 
 // ==============================================================
-// 7. MODULE 7: MULTI-CHANNEL ALLOCATION & INGESTION
-// ==============================================================
-console.log('\n--- 7. MODULE 7: MULTI-CHANNEL SYNCHRONIZATION ---')
-
-// 7.1 Phân bổ hạn mức quota A cho kênh Shopee
-const allocRes = await request('/admin/channels/SHOPEE/allocate', {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${adminToken}` },
-  body: JSON.stringify({
-    sku: sampleSku,
-    allocatedQuota: 10
-  })
-})
-check('M7 - Phân bổ quota A cho kênh Shopee', allocRes.status === 200)
-
-// 7.2 Tiếp nhận đơn hàng từ sàn đa kênh (tiêu thụ Quota A -> R)
-const channelOrderRes = await request('/integrations/channel-orders', {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${adminToken}` },
-  body: JSON.stringify({
-    channelCode: 'SHOPEE',
-    externalOrderId: `EXT-${Date.now()}`,
-    sku: sampleSku,
-    quantity: 1,
-    unitPrice: 50000,
-    customerName: 'Khách Shopee Live'
-  })
-})
-check('M7 - Tiếp nhận đơn từ sàn đa kênh (A -> R)', channelOrderRes.status === 200)
-
-// ==============================================================
 // 8. MODULE 8: RETURNS & RMA (QC QUARANTINE WORKFLOW)
 // ==============================================================
 console.log('\n--- 8. MODULE 8: RETURNS, REFUND & QC WORKFLOW ---')

@@ -18,6 +18,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
+    public DbSet<Promotion> Promotions => Set<Promotion>();
 
     // Module 6: Inventory
     public DbSet<InventoryBalance> InventoryBalances => Set<InventoryBalance>();
@@ -31,10 +32,6 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     // Module 9: Support & CSKH
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
     public DbSet<TicketMessage> TicketMessages => Set<TicketMessage>();
-
-    // Module 7: Multi-channel Sync
-    public DbSet<SalesChannel> SalesChannels => Set<SalesChannel>();
-    public DbSet<ChannelAllocation> ChannelAllocations => Set<ChannelAllocation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,10 +103,39 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         order.Property(o => o.PaymentStatus).HasMaxLength(50).IsRequired();
         order.Property(o => o.Status).HasMaxLength(50).IsRequired();
         order.Property(o => o.TotalAmount).HasPrecision(18, 2);
+        order.Property(o => o.SubtotalAmount).HasPrecision(18, 2);
+        order.Property(o => o.DiscountAmount).HasPrecision(18, 2);
+        order.Property(o => o.PromotionCode).HasMaxLength(50);
         order.Property(o => o.IdempotencyKey).HasMaxLength(128);
+        order.Property(o => o.RequestHash).HasMaxLength(64);
         order.HasIndex(o => o.OrderCode).IsUnique();
-        order.HasIndex(o => o.IdempotencyKey);
+        order.HasIndex(o => o.IdempotencyKey).IsUnique().HasFilter("[IdempotencyKey] IS NOT NULL");
         order.HasOne(o => o.User).WithMany().HasForeignKey(o => o.UserId).OnDelete(DeleteBehavior.SetNull);
+        order.HasOne(o => o.Promotion).WithMany().HasForeignKey(o => o.PromotionId).OnDelete(DeleteBehavior.Restrict);
+        order.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_Orders_SubtotalAmount", "[SubtotalAmount] >= 0");
+            t.HasCheckConstraint("CK_Orders_DiscountAmount", "[DiscountAmount] >= 0 AND [DiscountAmount] <= [SubtotalAmount]");
+            t.HasCheckConstraint("CK_Orders_TotalAmount", "[TotalAmount] = [SubtotalAmount] - [DiscountAmount]");
+        });
+
+        // Promotions: a single nullable FK on Order enforces at most one code per order.
+        var promotion = modelBuilder.Entity<Promotion>();
+        promotion.Property(p => p.Code).HasMaxLength(50).IsRequired();
+        promotion.Property(p => p.Description).HasMaxLength(300).IsRequired();
+        promotion.Property(p => p.DiscountType).HasMaxLength(20).IsRequired();
+        promotion.Property(p => p.Value).HasPrecision(18, 2);
+        promotion.Property(p => p.MinOrderAmount).HasPrecision(18, 2);
+        promotion.Property(p => p.MaxDiscount).HasPrecision(18, 2);
+        promotion.HasIndex(p => p.Code).IsUnique();
+        promotion.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_Promotions_DiscountType", "[DiscountType] IN ('Percent', 'Fixed')");
+            t.HasCheckConstraint("CK_Promotions_Value", "[Value] > 0 AND ([DiscountType] <> 'Percent' OR [Value] <= 100)");
+            t.HasCheckConstraint("CK_Promotions_MinOrderAmount", "[MinOrderAmount] >= 0");
+            t.HasCheckConstraint("CK_Promotions_MaxDiscount", "[MaxDiscount] IS NULL OR [MaxDiscount] > 0");
+            t.HasCheckConstraint("CK_Promotions_Usage", "[UsedCount] >= 0 AND ([UsageLimit] IS NULL OR [UsageLimit] >= 0 AND [UsedCount] <= [UsageLimit])");
+        });
 
         // OrderItems
         var orderItem = modelBuilder.Entity<OrderItem>();
@@ -179,16 +205,5 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         msg.Property(m => m.Message).HasMaxLength(4000).IsRequired();
         msg.HasOne(m => m.Ticket).WithMany(t => t.Messages).HasForeignKey(m => m.TicketId).OnDelete(DeleteBehavior.Cascade);
 
-        // SalesChannels
-        var channel = modelBuilder.Entity<SalesChannel>();
-        channel.Property(sc => sc.Code).HasMaxLength(50).IsRequired();
-        channel.Property(sc => sc.Name).HasMaxLength(200).IsRequired();
-        channel.HasIndex(sc => sc.Code).IsUnique();
-
-        // ChannelAllocations
-        var allocation = modelBuilder.Entity<ChannelAllocation>();
-        allocation.Property(ca => ca.Sku).HasMaxLength(64).IsRequired();
-        allocation.HasOne(ca => ca.Channel).WithMany(sc => sc.Allocations).HasForeignKey(ca => ca.ChannelId).OnDelete(DeleteBehavior.Cascade);
-        allocation.HasIndex(ca => new { ca.ChannelId, ca.Sku }).IsUnique();
     }
 }

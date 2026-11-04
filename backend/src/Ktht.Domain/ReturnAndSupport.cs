@@ -57,23 +57,3 @@ public class TicketMessage
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-public class SalesChannel
-{
-    public int Id { get; set; }
-    public string Code { get; set; } = string.Empty; // WEBSITE, SHOPEE, LAZADA, TIKTOK
-    public string Name { get; set; } = string.Empty;
-    public bool IsActive { get; set; } = true;
-
-    public ICollection<ChannelAllocation> Allocations { get; set; } = new List<ChannelAllocation>();
-}
-
-public class ChannelAllocation
-{
-    public int Id { get; set; }
-    public int ChannelId { get; set; }
-    public SalesChannel? Channel { get; set; }
-    public string Sku { get; set; } = string.Empty;
-    public int AllocatedQuota { get; set; } // A
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-}
-

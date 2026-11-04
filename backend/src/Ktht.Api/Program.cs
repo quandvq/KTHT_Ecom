@@ -1,4 +1,6 @@
 using System.Data;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Ktht.Application;
 using Ktht.Domain;
@@ -7,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? "Server=localhost;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True";
+    ?? "Server=(localdb)\\mssqllocaldb;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True";
 
 builder.Services.AddDbContext<CatalogDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddScoped<IProductReader, ProductReader>();
@@ -48,7 +50,11 @@ if (args.Contains("--import-pharmacity"))
         throw new InvalidOperationException("Import requires ASPNETCORE_ENVIRONMENT=Development.");
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-    var csvPath = "d:/KTHT/KTHT_Ecom/pharmacity_products_2026-11-03.csv";
+    var csvPath = File.Exists("pharmacity_products_2026-11-03.csv")
+        ? Path.GetFullPath("pharmacity_products_2026-11-03.csv")
+        : (File.Exists("../../pharmacity_products_2026-11-03.csv")
+            ? Path.GetFullPath("../../pharmacity_products_2026-11-03.csv")
+            : "d:/KTHT/KTHT_Ecom/pharmacity_products_2026-11-03.csv");
     var result = await PharmacityProductImporter.ImportAsync(db, csvPath);
     Console.WriteLine($"[IMPORT PHARMACITY SUCCESS]");
     Console.WriteLine($"Products Read: {result.TotalProcessed}");
@@ -84,6 +90,26 @@ static IResult RequireAuth(HttpContext context, out AuthUserClaims user, string?
     }
     user = current;
     return null!;
+}
+
+static string? GetPromotionError(Promotion promotion, decimal subtotal, DateTime now)
+{
+    if (!promotion.IsActive) return "Mã khuyến mãi không hoạt động.";
+    if (promotion.StartsAt.HasValue && promotion.StartsAt.Value > now) return "Mã khuyến mãi chưa đến thời gian sử dụng.";
+    if (promotion.EndsAt.HasValue && promotion.EndsAt.Value < now) return "Mã khuyến mãi đã hết hạn.";
+    if (promotion.UsageLimit.HasValue && promotion.UsedCount >= promotion.UsageLimit.Value) return "Mã khuyến mãi đã hết lượt sử dụng.";
+    if (subtotal < promotion.MinOrderAmount) return $"Đơn hàng cần tối thiểu {promotion.MinOrderAmount:N0}đ để dùng mã này.";
+    return null;
+}
+
+static string GetOrderRequestHash(CreateOrderRequest request)
+{
+    var lines = string.Join('|', request.Items.OrderBy(i => i.Sku, StringComparer.Ordinal)
+        .ThenBy(i => i.Quantity).Select(i => $"{i.Sku.Trim()}:{i.Quantity}"));
+    var canonical = string.Join('\n', request.CustomerName.Trim(), request.CustomerEmail?.Trim() ?? "",
+        request.CustomerPhone.Trim(), request.ShippingAddress.Trim(), request.PaymentMethod?.Trim() ?? "COD",
+        request.Note?.Trim() ?? "", request.PromotionCode?.Trim().ToUpperInvariant() ?? "", lines);
+    return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
 }
 
 // ==========================================
@@ -418,6 +444,40 @@ app.MapPost("/api/cart/validate", async (CartValidateRequest req, CatalogDbConte
     return Results.Ok(new { items = validatedItems, totalAmount, allValid = validatedItems.All(i => (bool)((dynamic)i).isValid) });
 });
 
+app.MapPost("/api/promotions/validate", async (PromotionValidateRequest req, CatalogDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Code))
+        return Results.BadRequest(new { message = "Vui lòng nhập mã khuyến mãi." });
+    if (req.Items is null || req.Items.Count == 0 || req.Items.Any(i => i.Quantity <= 0))
+        return Results.BadRequest(new { message = "Giỏ hàng hoặc số lượng sản phẩm không hợp lệ." });
+
+    decimal subtotal = 0;
+    foreach (var line in req.Items)
+    {
+        var variant = await db.ProductVariants.Include(v => v.Product)
+            .SingleOrDefaultAsync(v => v.Sku == line.Sku && v.IsActive && v.Product!.IsPublished);
+        if (variant is null)
+            return Results.BadRequest(new { message = $"Sản phẩm {line.Sku} không còn hoạt động." });
+        subtotal += variant.Price * line.Quantity;
+    }
+
+    var code = req.Code.Trim().ToUpperInvariant();
+    var promotion = await db.Promotions.AsNoTracking().SingleOrDefaultAsync(p => p.Code == code);
+    if (promotion is null) return Results.NotFound(new { message = "Mã khuyến mãi không tồn tại." });
+    var error = GetPromotionError(promotion, subtotal, DateTime.UtcNow);
+    if (error is not null) return Results.BadRequest(new { message = error });
+
+    var discountAmount = promotion.CalculateDiscount(subtotal);
+    return Results.Ok(new
+    {
+        promotion.Code,
+        promotion.Description,
+        subtotal,
+        discountAmount,
+        totalAmount = subtotal - discountAmount
+    });
+});
+
 // ==========================================
 // MODULE 5: CHECKOUT & ORDER MANAGEMENT
 // ==========================================
@@ -429,14 +489,19 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
 
     if (req.Items == null || req.Items.Count == 0)
         return Results.BadRequest(new { message = "Giỏ hàng rỗng, không thể tạo đơn hàng." });
+    if (req.Items.Any(i => i.Quantity <= 0))
+        return Results.BadRequest(new { message = "Số lượng sản phẩm phải là số nguyên dương." });
 
     // Idempotency check
     var idempotencyKey = context.Request.Headers["Idempotency-Key"].FirstOrDefault();
+    var requestHash = GetOrderRequestHash(req);
     if (!string.IsNullOrWhiteSpace(idempotencyKey))
     {
         var existingOrder = await db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey);
         if (existingOrder != null)
-            return Results.Ok(new { message = "Đơn hàng đã được tạo trước đó.", order = existingOrder });
+            return existingOrder.RequestHash == requestHash
+                ? Results.Ok(new { message = "Đơn hàng đã được tạo trước đó.", order = existingOrder })
+                : Results.Conflict(new { message = "Idempotency-Key đã được dùng cho nội dung đơn hàng khác." });
     }
 
     // Atomic transaction for order creation and inventory reservation
@@ -487,6 +552,27 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
             });
         }
 
+        Promotion? promotion = null;
+        decimal discountAmount = 0;
+        if (!string.IsNullOrWhiteSpace(req.PromotionCode))
+        {
+            var normalizedCode = req.PromotionCode.Trim().ToUpperInvariant();
+            promotion = await db.Promotions.SingleOrDefaultAsync(p => p.Code == normalizedCode);
+            if (promotion is null)
+            {
+                await transaction.RollbackAsync();
+                return Results.BadRequest(new { message = "Mã khuyến mãi không tồn tại." });
+            }
+            var promotionError = GetPromotionError(promotion, calculatedTotal, DateTime.UtcNow);
+            if (promotionError is not null)
+            {
+                await transaction.RollbackAsync();
+                return Results.BadRequest(new { message = promotionError });
+            }
+            discountAmount = promotion.CalculateDiscount(calculatedTotal);
+            promotion.UsedCount += 1;
+        }
+
         var orderCode = $"ORD-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(10000, 99999)}";
         var order = new Order
         {
@@ -499,9 +585,14 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
             PaymentMethod = req.PaymentMethod ?? "COD",
             PaymentStatus = "Pending",
             Status = "Pending",
-            TotalAmount = calculatedTotal,
+            SubtotalAmount = calculatedTotal,
+            DiscountAmount = discountAmount,
+            TotalAmount = calculatedTotal - discountAmount,
+            PromotionId = promotion?.Id,
+            PromotionCode = promotion?.Code,
             Note = req.Note?.Trim(),
             IdempotencyKey = idempotencyKey,
+            RequestHash = requestHash,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Items = orderItems,
@@ -553,6 +644,9 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
                 order.Id,
                 order.OrderCode,
                 order.TotalAmount,
+                order.SubtotalAmount,
+                order.DiscountAmount,
+                order.PromotionCode,
                 order.Status,
                 order.CustomerName,
                 order.ShippingAddress,
@@ -561,10 +655,19 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
             }
         });
     }
-    catch (Exception ex)
+    catch (DbUpdateException) when (!string.IsNullOrWhiteSpace(idempotencyKey))
     {
         await transaction.RollbackAsync();
-        return Results.Problem(detail: "Lỗi trong quá trình tạo đơn: " + ex.Message);
+        db.ChangeTracker.Clear();
+        var existing = await db.Orders.Include(o => o.Items).SingleOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey);
+        if (existing is not null && existing.RequestHash == requestHash)
+            return Results.Ok(new { message = "Đơn hàng đã được tạo trước đó.", order = existing });
+        return Results.Conflict(new { message = "Idempotency-Key đã được dùng hoặc đơn hàng đang được xử lý." });
+    }
+    catch (Exception)
+    {
+        await transaction.RollbackAsync();
+        return Results.Problem(detail: "Không thể tạo đơn hàng. Vui lòng thử lại.");
     }
 });
 
@@ -897,146 +1000,6 @@ app.MapGet("/api/admin/inventory/ledgers", async (string? sku, int? page, int? p
 
     var items = await query.OrderByDescending(l => l.CreatedAt).Skip((p - 1) * ps).Take(ps).ToListAsync();
     return Results.Ok(new { items, total, page = p, pageSize = ps });
-});
-
-// ==========================================
-// MODULE 7: MULTI-CHANNEL SYNCHRONIZATION
-// ==========================================
-app.MapGet("/api/admin/channels", async (HttpContext context, CatalogDbContext db) =>
-{
-    var authRes = RequireAuth(context, out _, "Admin");
-    if (authRes != null) return authRes;
-
-    var channels = await db.SalesChannels.Include(sc => sc.Allocations).AsNoTracking().ToListAsync();
-    return Results.Ok(channels);
-});
-
-app.MapPost("/api/admin/channels/{code}/allocate", async (string code, ChannelAllocateRequest req, HttpContext context, CatalogDbContext db) =>
-{
-    var authRes = RequireAuth(context, out var staff, "Admin");
-    if (authRes != null) return authRes;
-
-    var channel = await db.SalesChannels.Include(sc => sc.Allocations).FirstOrDefaultAsync(sc => sc.Code == code);
-    if (channel == null) return Results.NotFound(new { message = "Không tìm thấy kênh bán." });
-
-    var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == req.Sku);
-    if (balance == null) return Results.NotFound(new { message = "Không tìm thấy SKU." });
-
-    var existingAlloc = channel.Allocations.FirstOrDefault(a => a.Sku == req.Sku);
-    var currentA = existingAlloc?.AllocatedQuota ?? 0;
-    var deltaA = req.AllocatedQuota - currentA;
-
-    // Check availability: U >= deltaA
-    if (deltaA > 0 && balance.AvailableStock < deltaA)
-        return Results.Conflict(new { message = $"Không đủ tồn khả dụng U ({balance.AvailableStock}) để phân bổ thêm {deltaA} cho kênh." });
-
-    balance.A += deltaA;
-    if (existingAlloc == null)
-    {
-        existingAlloc = new ChannelAllocation { ChannelId = channel.Id, Sku = req.Sku, AllocatedQuota = req.AllocatedQuota };
-        db.ChannelAllocations.Add(existingAlloc);
-    }
-    else
-    {
-        existingAlloc.AllocatedQuota = req.AllocatedQuota;
-        existingAlloc.UpdatedAt = DateTime.UtcNow;
-    }
-
-    db.InventoryLedgers.Add(new InventoryLedger
-    {
-        TransactionCode = "ALLOC-" + code,
-        Sku = req.Sku,
-        MovementType = "Allocation",
-        DeltaA = deltaA,
-        Reason = $"Phân bổ quota hạn mức cho kênh {channel.Name}",
-        Actor = staff.FullName
-    });
-
-    await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Phân bổ hạn mức thành công.", channelCode = code, sku = req.Sku, allocatedQuota = req.AllocatedQuota });
-});
-
-app.MapPost("/api/integrations/channel-orders", async (ExternalChannelOrderRequest req, CatalogDbContext db) =>
-{
-    // Simulated order ingestion from Shopee/Lazada consuming quota A -> R
-    var channel = await db.SalesChannels.FirstOrDefaultAsync(sc => sc.Code == req.ChannelCode);
-    if (channel == null) return Results.BadRequest(new { message = "Kênh không hợp lệ." });
-
-    await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-    var allocation = await db.ChannelAllocations.FirstOrDefaultAsync(ca => ca.ChannelId == channel.Id && ca.Sku == req.Sku);
-    var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == req.Sku);
-
-    if (allocation == null || allocation.AllocatedQuota < req.Quantity)
-    {
-        await transaction.RollbackAsync();
-        return Results.Conflict(new { message = $"Hạn mức kênh {req.ChannelCode} không đủ (còn: {allocation?.AllocatedQuota ?? 0}, yêu cầu: {req.Quantity}). Đã đưa vào danh sách ngoại lệ." });
-    }
-
-    // Atomic move A -> R
-    allocation.AllocatedQuota -= req.Quantity;
-    balance!.A -= req.Quantity;
-    balance.R += req.Quantity;
-
-    var variant = await db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Sku == req.Sku);
-    var productId = variant?.ProductId ?? (await db.Products.Select(p => p.Id).FirstOrDefaultAsync());
-    var productName = variant?.Product?.Name ?? $"Sản phẩm {req.Sku}";
-    var variantName = variant?.Name;
-
-    var orderCode = $"EXT-{req.ChannelCode}-{req.ExternalOrderId}";
-    var order = new Order
-    {
-        OrderCode = orderCode,
-        CustomerName = req.CustomerName ?? $"Khách hàng {req.ChannelCode}",
-        CustomerEmail = $"{orderCode.ToLowerInvariant()}@channel.local",
-        CustomerPhone = req.CustomerPhone ?? "0900000000",
-        ShippingAddress = req.ShippingAddress ?? $"Địa chỉ giao qua sàn {req.ChannelCode}",
-        PaymentMethod = "Channel_Prepaid",
-        PaymentStatus = "Paid",
-        Status = "Pending",
-        TotalAmount = req.UnitPrice * req.Quantity,
-        Note = $"Đơn hàng tự động đồng bộ từ {req.ChannelCode} (Mã sàn: {req.ExternalOrderId})",
-        Items = new List<OrderItem>
-        {
-            new OrderItem
-            {
-                ProductId = productId,
-                VariantId = variant?.Id,
-                Sku = req.Sku,
-                ProductName = productName,
-                VariantName = variantName,
-                UnitPrice = req.UnitPrice,
-                Quantity = req.Quantity,
-                LineTotal = req.UnitPrice * req.Quantity
-            }
-        }
-    };
-
-    db.Orders.Add(order);
-    await db.SaveChangesAsync();
-
-    db.InventoryReservations.Add(new InventoryReservation
-    {
-        OrderId = order.Id,
-        Sku = req.Sku,
-        Quantity = req.Quantity,
-        Status = "Active"
-    });
-
-    db.InventoryLedgers.Add(new InventoryLedger
-    {
-        TransactionCode = orderCode,
-        Sku = req.Sku,
-        MovementType = "Reserve_From_Quota",
-        DeltaA = -req.Quantity,
-        DeltaR = req.Quantity,
-        Reason = $"Nhận đơn từ sàn {req.ChannelCode}, chuyển Quota A sang Reservation R",
-        Actor = "Channel_Adapter"
-    });
-
-    await db.SaveChangesAsync();
-    await transaction.CommitAsync();
-
-    return Results.Ok(new { message = $"Đã tiếp nhận đơn hàng {orderCode} từ {req.ChannelCode}.", orderCode, status = "Pending" });
 });
 
 // ==========================================
@@ -1424,12 +1387,11 @@ public sealed record UpdateProductRequest(string? Name, decimal? Price, int? Cat
 public sealed record CartItemRequest(string Sku, int Quantity);
 public sealed record CartValidateRequest(List<CartItemRequest> Items);
 
-public sealed record CreateOrderRequest(string CustomerName, string? CustomerEmail, string CustomerPhone, string ShippingAddress, string? PaymentMethod, string? Note, List<CartItemRequest> Items);
+public sealed record CreateOrderRequest(string CustomerName, string? CustomerEmail, string CustomerPhone, string ShippingAddress, string? PaymentMethod, string? Note, List<CartItemRequest> Items, string? PromotionCode = null);
+public sealed record PromotionValidateRequest(string Code, List<CartItemRequest> Items);
 public sealed record CancelOrderRequest(string? Reason);
 
 public sealed record AdjustInventoryRequest(string Sku, int DeltaP, int DeltaQ = 0, int DeltaB = 0, string? Reason = null);
-public sealed record ChannelAllocateRequest(string Sku, int AllocatedQuota);
-public sealed record ExternalChannelOrderRequest(string ChannelCode, string ExternalOrderId, string Sku, int Quantity, decimal UnitPrice, string? CustomerName, string? CustomerPhone, string? ShippingAddress);
 
 public sealed record CreateReturnItemRequest(int OrderItemId, int Quantity, string? Note);
 public sealed record CreateReturnRequest(int OrderId, string Reason, List<CreateReturnItemRequest> Items);

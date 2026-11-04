@@ -18,6 +18,7 @@ Trước khi bắt đầu, hãy đảm bảo máy tính đã cài đặt các c�
 
 > [!NOTE]
 > Nếu lệnh `npm` bị chặn trong PowerShell bởi chính sách thực thi script (`ExecutionPolicy`), bạn có thể dùng lệnh `npm.cmd` thay thế hoặc cấu hình PATH:
+$env:PATH = "C:\Program Files\nodejs;$env:PATH"
 > ```powershell
 > $env:PATH = "C:\Program Files\nodejs;$env:PATH"
 > ```
@@ -63,7 +64,11 @@ $env:ConnectionStrings__DefaultConnection = "Server=<SERVER_ID>;Database=KTHT_Ec
 ```
 
 **Ví dụ thực tế cho từng trường hợp:**
-- **Nếu máy bạn cài SQL Server thông thường (Developer):**
+- **Nếu dùng SQL Server LocalDB (tiện lợi nhất, không cần quyền Admin hay bật Service):**
+  ```powershell
+  $env:ConnectionStrings__DefaultConnection = "Server=(localdb)\mssqllocaldb;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True"
+  ```
+- **Nếu máy bạn cài SQL Server thông thường (Developer / Standard):**
   ```powershell
   $env:ConnectionStrings__DefaultConnection = "Server=localhost;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True"
   ```
@@ -309,3 +314,27 @@ node tests/e2e/catalog-api.mjs http://127.0.0.1:5080
   ```powershell
   npm.cmd run dev -- --host localhost --port 5173
   ```
+
+---
+
+## 7. Danh sách 50 Mã Khuyến Mãi Demo (Promotions)
+
+Hệ thống đã tích hợp 50 mã khuyến mãi demo sẵn có trong database để thử nghiệm tại trang **Thanh toán (Checkout)**:
+
+> [!IMPORTANT]
+> **Quy tắc nghiệp vụ**: Mỗi đơn hàng chỉ được áp dụng **duy nhất 1 mã khuyến mãi**. Nếu áp dụng mã mới, mã cũ sẽ tự động được thay thế. Giá và tiền giảm do máy chủ (Back-end) tính toán và kiểm tra toàn vẹn trực tiếp từ SQL Server.
+
+| Nhóm mã | Danh sách mã | Điều kiện & Mức giảm |
+| :--- | :--- | :--- |
+| **Giảm 10%** | `SALE10-01` đến `SALE10-20` (20 mã) | Giảm 10% giá trị đơn hàng, tối đa 50.000đ. Đơn tối thiểu từ 100.000đ. |
+| **Giảm 20.000đ** | `GIAM20K-01` đến `GIAM20K-15` (15 mã) | Giảm trực tiếp 20.000đ. Đơn tối thiểu từ 150.000đ. |
+| **Giảm 50.000đ** | `GIAM50K-01` đến `GIAM50K-10` (10 mã) | Giảm trực tiếp 50.000đ. Đơn tối thiểu từ 500.000đ. |
+| **VIP Giảm 15%** | `VIP15-01` đến `VIP15-05` (5 mã) | Giảm 15% giá trị đơn hàng, tối đa 100.000đ. Đơn tối thiểu từ 300.000đ. |
+
+### Cách thử nghiệm mã khuyến mãi trên giao diện:
+1. Thêm sản phẩm vào giỏ hàng sao cho tổng tiền thỏa mãn đơn tối thiểu (ví dụ: mua trên 100.000đ).
+2. Vào giỏ hàng $\rightarrow$ Bấm **Tiến hành đặt hàng**.
+3. Tại ô **Mã khuyến mãi**, nhập một trong các mã trên (ví dụ: `SALE10-01`).
+4. Bấm **Áp dụng** $\rightarrow$ Hệ thống lập tức gọi API kiểm tra, hiển thị số tiền được giảm và tổng thanh toán mới.
+5. Có thể bấm **Xóa mã** hoặc nhập mã khác để đổi mã.
+

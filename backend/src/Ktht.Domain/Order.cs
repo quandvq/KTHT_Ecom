@@ -14,8 +14,14 @@ public class Order
     public string PaymentStatus { get; set; } = "Pending";
     public string Status { get; set; } = "Pending"; // Pending -> Confirmed -> Shipped -> Delivered, or Cancelled
     public decimal TotalAmount { get; set; }
+    public decimal SubtotalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public int? PromotionId { get; set; }
+    public Promotion? Promotion { get; set; }
+    public string? PromotionCode { get; set; }
     public string? Note { get; set; }
     public string? IdempotencyKey { get; set; }
+    public string? RequestHash { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

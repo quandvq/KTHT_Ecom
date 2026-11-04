@@ -88,6 +88,9 @@ export interface Order {
   paymentMethod: string
   paymentStatus: string
   status: string
+  subtotalAmount?: number
+  discountAmount?: number
+  promotionCode?: string | null
   totalAmount: number
   note?: string | null
   createdAt: string
@@ -171,6 +174,14 @@ export interface DashboardStats {
     status: string
     createdAt: string
   }>
+}
+
+export interface PromotionValidation {
+  code: string
+  description: string
+  subtotal: number
+  discountAmount: number
+  totalAmount: number
 }
 
 export class ApiError extends Error {

@@ -10,7 +10,7 @@ public static class CatalogDemoSeed
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
-        // 1. Categories
+        // 1. Categories & Demo Fixtures (for E2E tests and catalog assertions)
         var definitions = new[] { ("cham-soc-ca-nhan", "Chăm sóc cá nhân"), ("cham-soc-gia-dinh", "Chăm sóc gia đình"), ("phu-kien-suc-khoe", "Phụ kiện sức khỏe") };
         var categories = new List<Category>();
         foreach (var (slug, name) in definitions)
@@ -25,7 +25,6 @@ public static class CatalogDemoSeed
             categories.Add(category);
         }
 
-        // 2. Demo Products
         string[] names = ["Khăn bông mềm", "Bàn chải mềm", "Lược gỗ", "Túi đựng cá nhân", "Gương cầm tay", "Hộp đựng tiện dụng", "Khăn lau gia đình", "Bình nước", "Túi giữ nhiệt", "Hộp chia ngăn", "Thảm tập", "Dây tập co giãn", "Túi thể thao", "Gối kê cổ", "Băng đô thể thao"];
         for (var i = 0; i < names.Length; i++)
         {
@@ -37,7 +36,7 @@ public static class CatalogDemoSeed
             db.Products.Add(new Product
             {
                 Name = names[i], Slug = slug, Sku = sku, Price = price, CategoryId = categories[i / 5].Id,
-                Description = $"{names[i]} — dữ liệu giả phục vụ demo KTHT. Thông tin và giá chỉ dùng để kiểm thử danh mục.",
+                Description = $"{names[i]} — dữ liệu demo KTHT.",
                 IsPublished = true, IsFeatured = i % 3 == 0,
                 Variants =
                 [
@@ -59,7 +58,7 @@ public static class CatalogDemoSeed
         }
         await db.SaveChangesAsync();
 
-        // 3. Seed Users
+        // 2. Seed Users.
         var demoUsers = new (string Email, string Name, string Role, string Phone)[]
         {
             ("admin@ktht.local", "Quản trị viên Hệ thống", "Admin", "0901234567"),
@@ -105,24 +104,33 @@ public static class CatalogDemoSeed
         }
         await db.SaveChangesAsync();
 
-        // 4. Seed SalesChannels
-        var channels = new (string Code, string Name)[]
+        // 2. Seed exactly 50 deterministic promotions without overwriting existing usage.
+        var demoPromotions = new List<Promotion>();
+        demoPromotions.AddRange(Enumerable.Range(1, 20).Select(i => new Promotion
         {
-            ("WEBSITE", "Website Cửa hàng Trực tuyến"),
-            ("SHOPEE", "Gian hàng Shopee Mall"),
-            ("LAZADA", "Gian hàng Lazada LazMall"),
-            ("TIKTOK", "Gian hàng TikTok Shop")
-        };
-        foreach (var (code, name) in channels)
+            Code = $"SALE10-{i:00}", Description = "Giảm 10% tối đa 50.000đ", DiscountType = "Percent",
+            Value = 10m, MinOrderAmount = 100000m, MaxDiscount = 50000m, UsageLimit = 100, IsActive = true
+        }));
+        demoPromotions.AddRange(Enumerable.Range(1, 15).Select(i => new Promotion
         {
-            if (!await db.SalesChannels.AnyAsync(sc => sc.Code == code))
-            {
-                db.SalesChannels.Add(new SalesChannel { Code = code, Name = name, IsActive = true });
-            }
-        }
+            Code = $"GIAM20K-{i:00}", Description = "Giảm 20.000đ cho đơn từ 150.000đ", DiscountType = "Fixed",
+            Value = 20000m, MinOrderAmount = 150000m, UsageLimit = 100, IsActive = true
+        }));
+        demoPromotions.AddRange(Enumerable.Range(1, 10).Select(i => new Promotion
+        {
+            Code = $"GIAM50K-{i:00}", Description = "Giảm 50.000đ cho đơn từ 500.000đ", DiscountType = "Fixed",
+            Value = 50000m, MinOrderAmount = 500000m, UsageLimit = 100, IsActive = true
+        }));
+        demoPromotions.AddRange(Enumerable.Range(1, 5).Select(i => new Promotion
+        {
+            Code = $"VIP15-{i:00}", Description = "Giảm 15% tối đa 100.000đ", DiscountType = "Percent",
+            Value = 15m, MinOrderAmount = 300000m, MaxDiscount = 100000m, UsageLimit = 50, IsActive = true
+        }));
+        var existingPromotionCodes = await db.Promotions.Select(p => p.Code).ToHashSetAsync();
+        db.Promotions.AddRange(demoPromotions.Where(p => !existingPromotionCodes.Contains(p.Code)));
         await db.SaveChangesAsync();
 
-        // 5. Seed InventoryBalances for all active variants
+        // 3. Seed InventoryBalances for all active variants
         var activeVariants = await db.ProductVariants.Where(v => v.IsActive).ToListAsync();
         var existingSkus = await db.InventoryBalances.Select(b => b.Sku).ToHashSetAsync();
         foreach (var v in activeVariants)

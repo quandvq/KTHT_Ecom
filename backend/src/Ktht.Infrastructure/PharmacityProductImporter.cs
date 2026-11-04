@@ -40,6 +40,7 @@ public static class PharmacityProductImporter
         var priceVndIdx = Array.IndexOf(header, "price_vnd");
         var currencyIdx = Array.IndexOf(header, "currency");
         var descriptionIdx = Array.IndexOf(header, "description");
+        var imageUrlIdx = Array.IndexOf(header, "image_url");
 
         if (nameIdx == -1 || categoryIdx == -1 || priceVndIdx == -1 || descriptionIdx == -1)
             throw new InvalidOperationException("File CSV thiếu các cột bắt buộc (name, category, price_vnd, description).");
@@ -131,6 +132,10 @@ public static class PharmacityProductImporter
                 description = description[..4000];
             }
 
+            // 9. image_url (allow NULL)
+            var rawImageUrl = imageUrlIdx >= 0 ? GetField(fields, imageUrlIdx) : null;
+            var imageUrl = NormalizeNullable(rawImageUrl);
+
             // Category resolution: reuse if exists, create if not
             var catKey = categoryName.ToLowerInvariant();
             if (!categoryCache.TryGetValue(catKey, out var category))
@@ -195,7 +200,7 @@ public static class PharmacityProductImporter
 
                 if (samePackage && sameUnit)
                 {
-                    // Exactly the same product: update price & description, do not duplicate
+                    // Exactly the same product: update price, description & image_url, do not duplicate
                     bool changed = false;
                     if (existingProduct.Price != priceVnd)
                     {
@@ -207,13 +212,26 @@ public static class PharmacityProductImporter
                         existingProduct.Description = description;
                         changed = true;
                     }
-
-                    // Also sync variant price
-                    var defaultVariant = existingProduct.Variants.FirstOrDefault();
-                    if (defaultVariant != null && defaultVariant.Price != priceVnd)
+                    if (existingProduct.ImageUrl != imageUrl)
                     {
-                        defaultVariant.Price = priceVnd;
+                        existingProduct.ImageUrl = imageUrl;
                         changed = true;
+                    }
+
+                    // Also sync variant price & image_url
+                    var defaultVariant = existingProduct.Variants.FirstOrDefault();
+                    if (defaultVariant != null)
+                    {
+                        if (defaultVariant.Price != priceVnd)
+                        {
+                            defaultVariant.Price = priceVnd;
+                            changed = true;
+                        }
+                        if (defaultVariant.ImageUrl != imageUrl)
+                        {
+                            defaultVariant.ImageUrl = imageUrl;
+                            changed = true;
+                        }
                     }
 
                     if (changed)
@@ -269,7 +287,7 @@ public static class PharmacityProductImporter
                 Currency = currency,
                 Description = description,
                 Slug = slug,
-                ImageUrl = null, // Do not fabricate images not present in CSV
+                ImageUrl = imageUrl,
                 Variants =
                 [
                     new ProductVariant
@@ -277,7 +295,7 @@ public static class PharmacityProductImporter
                         Sku = variantSku,
                         Name = packageSize ?? saleUnit ?? "Tiêu chuẩn",
                         Price = priceVnd,
-                        ImageUrl = null,
+                        ImageUrl = imageUrl,
                         IsActive = true
                     }
                 ]
