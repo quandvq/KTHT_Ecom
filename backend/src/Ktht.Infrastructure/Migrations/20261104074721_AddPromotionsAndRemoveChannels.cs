@@ -59,9 +59,7 @@ namespace Ktht.Infrastructure.Migrations
                 nullable: false,
                 defaultValue: 0m);
 
-            migrationBuilder.Sql("DELETE FROM [Orders] WHERE [OrderCode] LIKE 'EXT-%';");
             migrationBuilder.Sql("UPDATE [Orders] SET [SubtotalAmount] = [TotalAmount], [DiscountAmount] = 0 WHERE [SubtotalAmount] = 0;");
-            migrationBuilder.Sql("UPDATE [InventoryBalances] SET [A] = 0;");
 
             migrationBuilder.CreateTable(
                 name: "Promotions",

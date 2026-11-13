@@ -422,7 +422,21 @@ app.MapPost("/api/cart/validate", async (CartValidateRequest req, CatalogDbConte
         var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == line.Sku);
         var available = balance?.AvailableStock ?? 0;
         var requestedQty = Math.Max(1, line.Quantity);
-        var lineTotal = variant.Price * requestedQty;
+
+        // Check if item is in active flash sale
+        var now = DateTime.UtcNow;
+        var flashItem = await db.FlashSaleItems
+            .Include(fsi => fsi.FlashSale)
+            .Where(fsi => fsi.VariantId == variant.Id
+                          && fsi.FlashSale!.IsActive
+                          && fsi.FlashSale.StartTime <= now
+                          && now <= fsi.FlashSale.EndTime
+                          && fsi.QuantityLimit > fsi.SoldCount)
+            .FirstOrDefaultAsync();
+
+        var unitPrice = flashItem != null ? flashItem.FlashSalePrice : variant.Price;
+        var isFlashSale = flashItem != null;
+        var lineTotal = unitPrice * requestedQty;
         totalAmount += lineTotal;
 
         validatedItems.Add(new
@@ -432,7 +446,10 @@ app.MapPost("/api/cart/validate", async (CartValidateRequest req, CatalogDbConte
             productName = variant.Product.Name,
             variantName = variant.Name,
             imageUrl = variant.ImageUrl ?? variant.Product.ImageUrl,
-            price = variant.Price,
+            price = unitPrice,
+            originalPrice = variant.Price,
+            isFlashSale,
+            flashSaleDiscount = flashItem?.DiscountPercentage ?? 0,
             quantity = requestedQty,
             lineTotal,
             availableStock = available,
@@ -451,6 +468,7 @@ app.MapPost("/api/promotions/validate", async (PromotionValidateRequest req, Cat
     if (req.Items is null || req.Items.Count == 0 || req.Items.Any(i => i.Quantity <= 0))
         return Results.BadRequest(new { message = "Giỏ hàng hoặc số lượng sản phẩm không hợp lệ." });
 
+    var now = DateTime.UtcNow;
     decimal subtotal = 0;
     foreach (var line in req.Items)
     {
@@ -458,7 +476,18 @@ app.MapPost("/api/promotions/validate", async (PromotionValidateRequest req, Cat
             .SingleOrDefaultAsync(v => v.Sku == line.Sku && v.IsActive && v.Product!.IsPublished);
         if (variant is null)
             return Results.BadRequest(new { message = $"Sản phẩm {line.Sku} không còn hoạt động." });
-        subtotal += variant.Price * line.Quantity;
+
+        var flashItem = await db.FlashSaleItems
+            .Include(fsi => fsi.FlashSale)
+            .Where(fsi => fsi.VariantId == variant.Id
+                          && fsi.FlashSale!.IsActive
+                          && fsi.FlashSale.StartTime <= now
+                          && now <= fsi.FlashSale.EndTime
+                          && fsi.QuantityLimit > fsi.SoldCount)
+            .FirstOrDefaultAsync();
+
+        var unitPrice = flashItem != null ? flashItem.FlashSalePrice : variant.Price;
+        subtotal += unitPrice * line.Quantity;
     }
 
     var code = req.Code.Trim().ToUpperInvariant();
@@ -536,7 +565,24 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
             // Reserve stock: increase R atomically
             balance.R += line.Quantity;
 
-            var lineTotal = variant.Price * line.Quantity;
+            // Check if item is in active flash sale with quota
+            var now = DateTime.UtcNow;
+            var flashItem = await db.FlashSaleItems
+                .Include(fsi => fsi.FlashSale)
+                .Where(fsi => fsi.VariantId == variant.Id
+                              && fsi.FlashSale!.IsActive
+                              && fsi.FlashSale.StartTime <= now
+                              && now <= fsi.FlashSale.EndTime
+                              && (fsi.QuantityLimit - fsi.SoldCount) >= line.Quantity)
+                .FirstOrDefaultAsync();
+
+            var unitPrice = flashItem != null ? flashItem.FlashSalePrice : variant.Price;
+            if (flashItem != null)
+            {
+                flashItem.SoldCount += line.Quantity;
+            }
+
+            var lineTotal = unitPrice * line.Quantity;
             calculatedTotal += lineTotal;
 
             orderItems.Add(new OrderItem
@@ -546,7 +592,7 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
                 Sku = variant.Sku,
                 ProductName = variant.Product.Name,
                 VariantName = variant.Name,
-                UnitPrice = variant.Price,
+                UnitPrice = unitPrice,
                 Quantity = line.Quantity,
                 LineTotal = lineTotal
             });
@@ -1372,6 +1418,442 @@ app.MapGet("/api/admin/dashboard", async (HttpContext context, CatalogDbContext 
     });
 });
 
+// ==========================================
+// MODULE 11: FLASH SALE MANAGEMENT
+// ==========================================
+app.MapGet("/api/flash-sales/active", async (CatalogDbContext db) =>
+{
+    var now = DateTime.UtcNow;
+    var activeCampaign = await db.FlashSales
+        .Include(fs => fs.Items)
+            .ThenInclude(fsi => fsi.Product)
+        .Include(fs => fs.Items)
+            .ThenInclude(fsi => fsi.Variant)
+        .Where(fs => fs.IsActive && fs.StartTime <= now && now <= fs.EndTime)
+        .OrderBy(fs => fs.EndTime)
+        .FirstOrDefaultAsync();
+
+    if (activeCampaign == null)
+    {
+        return Results.Ok(new { active = false, message = "Hiện không có chiến dịch Flash Sale nào đang diễn ra." });
+    }
+
+    var remainingSeconds = Math.Max(0, (int)(activeCampaign.EndTime - now).TotalSeconds);
+
+    var items = activeCampaign.Items
+        .Where(i => i.Product != null && i.Product.IsPublished && i.Variant != null && i.Variant.IsActive)
+        .Select(i => new
+        {
+            i.Id,
+            i.ProductId,
+            productName = i.Product!.Name,
+            productSlug = i.Product.Slug,
+            imageUrl = i.Variant?.ImageUrl ?? i.Product.ImageUrl,
+            packageSize = i.Product.PackageSize,
+            saleUnit = i.Product.SaleUnit,
+            i.VariantId,
+            sku = i.Sku,
+            variantName = i.Variant?.Name ?? i.Sku,
+            originalPrice = i.OriginalPrice,
+            flashSalePrice = i.FlashSalePrice,
+            discountPercentage = i.DiscountPercentage,
+            quantityLimit = i.QuantityLimit,
+            soldCount = i.SoldCount,
+            remainingQuota = i.RemainingQuota,
+            isSoldOut = i.RemainingQuota <= 0
+        })
+        .ToList();
+
+    return Results.Ok(new
+    {
+        active = true,
+        campaign = new
+        {
+            activeCampaign.Id,
+            activeCampaign.Name,
+            activeCampaign.Description,
+            activeCampaign.StartTime,
+            activeCampaign.EndTime,
+            remainingSeconds,
+            items
+        }
+    });
+});
+
+app.MapGet("/api/admin/flash-sales", async (HttpContext context, CatalogDbContext db) =>
+{
+    var authRes = RequireAuth(context, out _, "Sales");
+    if (authRes != null) return authRes;
+
+    var list = await db.FlashSales
+        .Include(fs => fs.Items)
+            .ThenInclude(i => i.Product)
+        .OrderByDescending(fs => fs.CreatedAt)
+        .Select(fs => new
+        {
+            fs.Id,
+            fs.Name,
+            fs.Description,
+            fs.StartTime,
+            fs.EndTime,
+            fs.IsActive,
+            fs.CreatedAt,
+            totalItems = fs.Items.Count,
+            totalSold = fs.Items.Sum(i => i.SoldCount),
+            totalRevenue = fs.Items.Sum(i => i.SoldCount * i.FlashSalePrice),
+            items = fs.Items.Select(i => new
+            {
+                i.Id,
+                i.ProductId,
+                productName = i.Product != null ? i.Product.Name : "",
+                i.VariantId,
+                i.Sku,
+                i.OriginalPrice,
+                i.FlashSalePrice,
+                i.QuantityLimit,
+                i.SoldCount,
+                i.DiscountPercentage
+            })
+        })
+        .ToListAsync();
+
+    return Results.Ok(list);
+});
+
+app.MapPost("/api/admin/flash-sales", async (CreateFlashSaleRequest req, HttpContext context, CatalogDbContext db) =>
+{
+    var authRes = RequireAuth(context, out _, "Admin");
+    if (authRes != null) return authRes;
+
+    if (string.IsNullOrWhiteSpace(req.Name))
+        return Results.BadRequest(new { message = "Tên chiến dịch Flash Sale không được để trống." });
+    if (req.EndTime <= req.StartTime)
+        return Results.BadRequest(new { message = "Thời gian kết thúc phải sau thời gian bắt đầu." });
+    if (req.Items == null || req.Items.Count == 0)
+        return Results.BadRequest(new { message = "Chiến dịch phải có ít nhất một sản phẩm tham gia." });
+
+    var flashSale = new FlashSale
+    {
+        Name = req.Name.Trim(),
+        Description = req.Description?.Trim(),
+        StartTime = req.StartTime,
+        EndTime = req.EndTime,
+        IsActive = true
+    };
+    db.FlashSales.Add(flashSale);
+    await db.SaveChangesAsync();
+
+    foreach (var itemReq in req.Items)
+    {
+        var variant = await db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == itemReq.VariantId);
+        if (variant == null) continue;
+        if (itemReq.FlashSalePrice <= 0 || itemReq.FlashSalePrice >= variant.Price)
+            continue; // check constraint: FlashSalePrice > 0 and FlashSalePrice < OriginalPrice
+
+        db.FlashSaleItems.Add(new FlashSaleItem
+        {
+            FlashSaleId = flashSale.Id,
+            ProductId = variant.ProductId,
+            VariantId = variant.Id,
+            Sku = variant.Sku,
+            OriginalPrice = variant.Price,
+            FlashSalePrice = itemReq.FlashSalePrice,
+            QuantityLimit = Math.Max(1, itemReq.QuantityLimit),
+            SoldCount = 0
+        });
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { message = "Tạo chiến dịch Flash Sale thành công.", id = flashSale.Id });
+});
+
+app.MapPut("/api/admin/flash-sales/{id:int}/toggle", async (int id, HttpContext context, CatalogDbContext db) =>
+{
+    var authRes = RequireAuth(context, out _, "Admin");
+    if (authRes != null) return authRes;
+
+    var fs = await db.FlashSales.FindAsync(id);
+    if (fs == null) return Results.NotFound(new { message = "Không tìm thấy chiến dịch Flash Sale." });
+
+    fs.IsActive = !fs.IsActive;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { message = fs.IsActive ? "Đã kích hoạt Flash Sale." : "Đã tạm dừng Flash Sale.", isActive = fs.IsActive });
+});
+
+// ==========================================
+// MODULE 12: CHATBOT API (CUSTOMER & ADMIN)
+// ==========================================
+app.MapPost("/api/chat/customer", async (CustomerChatRequest req, CatalogDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Message))
+        return Results.BadRequest(new { message = "Nội dung tin nhắn không được để trống." });
+
+    var msg = req.Message.Trim();
+    var lower = msg.ToLowerInvariant();
+
+    // 1. Order tracking detection (pattern ORD-YYYYMMDD-XXXXX)
+    var orderMatch = Regex.Match(msg, @"ORD-\d{8}-\d{5}", RegexOptions.IgnoreCase);
+    if (orderMatch.Success)
+    {
+        var code = orderMatch.Value.ToUpperInvariant();
+        var order = await db.Orders
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.OrderCode == code);
+
+        if (order != null)
+        {
+            var statusVn = order.Status switch
+            {
+                "Pending" => "Đang chờ xử lý",
+                "Confirmed" => "Đã xác nhận & đang chuẩn bị hàng",
+                "Shipped" => "Đang giao hàng",
+                "Delivered" => "Đã giao hàng thành công",
+                "Cancelled" => "Đã hủy",
+                _ => order.Status
+            };
+            var itemsList = string.Join(", ", order.Items.Select(i => $"{i.ProductName} (x{i.Quantity})"));
+            return Results.Ok(new
+            {
+                reply = $"📦 **Thông tin đơn hàng #{order.OrderCode}**:\n" +
+                        $"- **Trạng thái:** {statusVn}\n" +
+                        $"- **Người nhận:** {order.CustomerName} ({order.CustomerPhone})\n" +
+                        $"- **Địa chỉ giao:** {order.ShippingAddress}\n" +
+                        $"- **Tổng tiền thanh toán:** {order.TotalAmount:N0}đ ({order.PaymentMethod} - {order.PaymentStatus})\n" +
+                        $"- **Sản phẩm:** {itemsList}\n\n" +
+                        "Nếu quý khách cần hỗ trợ thêm về đơn hàng này, vui lòng liên hệ Hotline 1800 6828.",
+                suggestions = new[] { "Hướng dẫn đổi trả hàng", "Chính sách bảo hành", "Tra cứu đơn khác" }
+            });
+        }
+        else
+        {
+            return Results.Ok(new
+            {
+                reply = $"Không tìm thấy đơn hàng mã `{code}` trong hệ thống V-Pharma. Quý khách vui lòng kiểm tra lại mã đơn hàng hoặc đăng nhập để xem lịch sử mua hàng.",
+                suggestions = new[] { "Cách xem lịch sử đơn", "Hotline hỗ trợ 1800 6828" }
+            });
+        }
+    }
+
+    // 2. Health & diagnosis inquiry disclaimer
+    var isMedicalQuery = lower.Contains("bệnh") || lower.Contains("đau") || lower.Contains("sốt") ||
+                          lower.Contains("viêm") || lower.Contains("uống thuốc gì") || lower.Contains("triệu chứng") ||
+                          lower.Contains("kê đơn") || lower.Contains("chẩn đoán") || lower.Contains("chữa");
+
+    // 3. Product search keywords
+    var isSearchQuery = lower.Contains("tìm") || lower.Contains("mua") || lower.Contains("giá") ||
+                        lower.Contains("thuốc") || lower.Contains("khẩu trang") || lower.Contains("vitamin") ||
+                        lower.Contains("paracetamol") || lower.Contains("panadol") || lower.Contains("canxi") ||
+                        lower.Contains("dầu gió") || lower.Contains("xịt") || lower.Contains("băng keo") ||
+                        lower.Contains("nước súc miệng") || lower.Contains("kem");
+
+    if (isSearchQuery || isMedicalQuery)
+    {
+        var stopWords = new HashSet<string> { "tìm", "mua", "thuốc", "giá", "cho", "tôi", "có", "bán", "không", "ở", "đâu", "nào", "sản", "phẩm", "loại", "v-pharma", "vui", "lòng", "tư", "vấn" };
+        var queryTerms = lower.Split(new[] { ' ', ',', '.', '?' }, StringSplitOptions.RemoveEmptyEntries)
+                              .Where(w => w.Length > 1 && !stopWords.Contains(w))
+                              .Take(3)
+                              .ToList();
+
+        var searchTerm = queryTerms.Count > 0 ? string.Join(" ", queryTerms) : lower;
+
+        var matchingProducts = await db.Products
+            .Include(p => p.Variants)
+            .Where(p => p.IsPublished && (
+                p.Name.Contains(searchTerm) || 
+                (p.Description != null && p.Description.Contains(searchTerm)) ||
+                (p.Category != null && p.Category.Name.Contains(searchTerm)) ||
+                (p.Brand != null && p.Brand.Name.Contains(searchTerm))
+            ))
+            .OrderByDescending(p => p.IsFeatured)
+            .Take(4)
+            .Select(p => new
+            {
+                p.Id,
+                p.Name,
+                p.Slug,
+                p.ImageUrl,
+                p.PackageSize,
+                p.SaleUnit,
+                price = p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).Select(v => v.Price).FirstOrDefault(),
+                sku = p.Variants.Where(v => v.IsActive).Select(v => v.Sku).FirstOrDefault() ?? ""
+            })
+            .ToListAsync();
+
+        var medicalDisclaimer = isMedicalQuery 
+            ? "\n\n⚠️ *Lưu ý y tế:* V-Pharma cung cấp thông tin tham khảo về sản phẩm. Vui lòng tham khảo ý kiến Bác sĩ hoặc Dược sĩ chuyên môn trước khi sử dụng thuốc hoặc điều trị bệnh."
+            : "";
+
+        if (matchingProducts.Count > 0)
+        {
+            var productListText = string.Join("\n", matchingProducts.Select(p => $"- **{p.Name}** — Giá từ **{p.price:N0}đ** / {p.SaleUnit ?? "sản phẩm"}"));
+            return Results.Ok(new
+            {
+                reply = $"Dưới đây là một số sản phẩm chăm sóc sức khỏe phù hợp tại V-Pharma:\n\n{productListText}{medicalDisclaimer}\n\nBạn có thể nhấn vào sản phẩm bên dưới để xem chi tiết hoặc thêm vào giỏ hàng:",
+                products = matchingProducts,
+                suggestions = new[] { "Cách đặt hàng online", "Phí vận chuyển", "Chương trình Flash Sale" }
+            });
+        }
+        else if (isMedicalQuery)
+        {
+            return Results.Ok(new
+            {
+                reply = $"Dạ V-Pharma đã ghi nhận câu hỏi của bạn. Đối với triệu chứng sức khỏe hoặc các bệnh lý, V-Pharma khuyến nghị quý khách nên tham khảo ý kiến Bác sĩ hoặc liên hệ Dược sĩ trực tuyến qua Hotline **1800 6828** (miễn phí) để được tư vấn chính xác và an toàn nhất.{medicalDisclaimer}",
+                suggestions = new[] { "Xem danh mục thuốc", "Xem sản phẩm Flash Sale", "Hotline 1800 6828" }
+            });
+        }
+    }
+
+    // 4. Shipping, Return, Policy FAQs
+    if (lower.Contains("giao hàng") || lower.Contains("vận chuyển") || lower.Contains("phí ship") || lower.Contains("mấy ngày"))
+    {
+        return Results.Ok(new
+        {
+            reply = "🚚 **Chính sách giao hàng của V-Pharma:**\n" +
+                    "- **Miễn phí giao hàng** cho mọi đơn hàng từ **300.000đ** trên toàn quốc.\n" +
+                    "- **Giao hỏa tốc 2 giờ:** Áp dụng tại khu vực nội thành TP.HCM và Hà Nội.\n" +
+                    "- **Giao tiêu chuẩn:** 1-2 ngày đối với khu vực thành phố, 2-3 ngày với các tỉnh thành khác.\n" +
+                    "- Được đồng kiểm và kiểm tra bao bì sản phẩm trước khi nhận.",
+            suggestions = new[] { "Chính sách đổi trả", "Phương thức thanh toán", "Sản phẩm khuyến mãi" }
+        });
+    }
+
+    if (lower.Contains("đổi trả") || lower.Contains("hoàn tiền") || lower.Contains("bảo hành") || lower.Contains("hỏng"))
+    {
+        return Results.Ok(new
+        {
+            reply = "🔄 **Chính sách đổi trả & hoàn tiền V-Pharma:**\n" +
+                    "- Hỗ trợ đổi trả trong vòng **30 ngày** kể từ ngày nhận hàng.\n" +
+                    "- Áp dụng đối với sản phẩm còn nguyên tem mác, chưa qua sử dụng hoặc có lỗi từ nhà sản xuất / hư hỏng do vận chuyển.\n" +
+                    "- Hoàn tiền 100% qua tài khoản ngân hàng hoặc đổi sản phẩm mới miễn phí vận chuyển 2 chiều.",
+            suggestions = new[] { "Liên hệ Hotline hỗ trợ", "Cách đặt hàng", "Kiểm tra đơn hàng" }
+        });
+    }
+
+    if (lower.Contains("thanh toán") || lower.Contains("cod") || lower.Contains("chuyển khoản") || lower.Contains("thẻ"))
+    {
+        return Results.Ok(new
+        {
+            reply = "💳 **Phương thức thanh toán tại V-Pharma:**\n" +
+                    "- **COD:** Thanh toán tiền mặt khi nhận hàng tận nơi.\n" +
+                    "- **Chuyển khoản ngân hàng / VNPay / Ví điện tử:** Nhanh chóng và bảo mật.\n" +
+                    "- Đảm bảo an toàn tuyệt đối 100% cho mọi giao dịch.",
+            suggestions = new[] { "Chính sách giao hàng", "Khuyến mãi hiện có" }
+        });
+    }
+
+    if (lower.Contains("flash sale") || lower.Contains("khuyến mãi") || lower.Contains("giảm giá") || lower.Contains("ưu đãi"))
+    {
+        return Results.Ok(new
+        {
+            reply = "🔥 V-Pharma đang diễn ra chương trình **Flash Sale Giờ Vàng Dược Phẩm** giảm giá đến 40% cho nhiều mặt hàng vitamin, thực phẩm chức năng và vật tư y tế! Ngoài ra, quý khách có thể nhập mã voucher giảm thêm khi thanh toán tại trang Checkout.",
+            suggestions = new[] { "Xem Flash Sale", "Xem mã giảm giá", "Sản phẩm bán chạy" }
+        });
+    }
+
+    // Default friendly greeting & routing
+    return Results.Ok(new
+    {
+        reply = "Xin chào! Em là Trợ lý ảo V-Pharma 🌿. Em có thể hỗ trợ bạn:\n" +
+                "- 🔍 Tìm kiếm thuốc, vitamin, thực phẩm chức năng chính hãng\n" +
+                "- 📦 Tra cứu trạng thái đơn hàng (nhập mã đơn như `ORD-...`)\n" +
+                "- 🚚 Tư vấn chính sách giao nhận 2h, đổi trả trong 30 ngày\n" +
+                "- 🎁 Thông tin Flash Sale và mã giảm giá hôm nay\n\n" +
+                "Bạn cần hỗ trợ thông tin gì ạ?",
+        suggestions = new[] { "Tìm vitamin C", "Flash Sale hôm nay", "Chính sách đổi trả", "Hotline 1800 6828" }
+    });
+});
+
+app.MapPost("/api/chat/admin", async (AdminChatRequest req, HttpContext context, CatalogDbContext db) =>
+{
+    var authRes = RequireAuth(context, out var user, "CustomerSupport");
+    if (authRes != null) return authRes;
+
+    if (string.IsNullOrWhiteSpace(req.Message))
+        return Results.BadRequest(new { message = "Nội dung tin nhắn không được để trống." });
+
+    var lower = req.Message.Trim().ToLowerInvariant();
+
+    if (lower.Contains("tồn kho") || lower.Contains("kho") || lower.Contains("inventory") || lower.Contains("stock"))
+    {
+        var balances = await db.InventoryBalances.ToListAsync();
+        var totalP = balances.Sum(b => b.P);
+        var totalQ = balances.Sum(b => b.Q);
+        var totalB = balances.Sum(b => b.B);
+        var totalR = balances.Sum(b => b.R);
+        var totalA = balances.Sum(b => b.A);
+        var totalU = balances.Sum(b => b.AvailableStock);
+        var lowStockCount = balances.Count(b => b.AvailableStock <= b.B);
+
+        return Results.Ok(new
+        {
+            reply = $"📊 **Báo cáo Tồn kho Hệ thống V-Pharma (Kho WH-CENTRAL):**\n" +
+                    $"- **Tổng tồn vật lý (P):** {totalP:N0} đơn vị\n" +
+                    $"- **Tồn cách ly / QC (Q):** {totalQ:N0} đơn vị\n" +
+                    $"- **Tồn an toàn (B):** {totalB:N0} đơn vị\n" +
+                    $"- **Đang giữ chỗ cho đơn (R):** {totalR:N0} đơn vị\n" +
+                    $"- **Cam kết sàn ngoài (A):** {totalA:N0} đơn vị\n" +
+                    $"- **Khả dụng bán (U = P - Q - B - R - A):** **{totalU:N0}** đơn vị\n" +
+                    $"- **Cảnh báo sắp hết hàng (U <= B):** {lowStockCount} SKU\n\n" +
+                    $"*Invariant check:* U >= 0 và các thành phần không âm được đảm bảo 100%.",
+            data = new { totalP, totalQ, totalB, totalR, totalA, totalU, lowStockCount }
+        });
+    }
+
+    if (lower.Contains("đơn hàng") || lower.Contains("doanh thu") || lower.Contains("order") || lower.Contains("kpi"))
+    {
+        var totalOrders = await db.Orders.CountAsync();
+        var pendingOrders = await db.Orders.CountAsync(o => o.Status == "Pending" || o.Status == "Confirmed");
+        var deliveredOrders = await db.Orders.CountAsync(o => o.Status == "Delivered");
+        var cancelledOrders = await db.Orders.CountAsync(o => o.Status == "Cancelled");
+        var totalRevenue = await db.Orders.Where(o => o.Status != "Cancelled").SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+
+        return Results.Ok(new
+        {
+            reply = $"📈 **Tóm tắt Hiệu suất Kinh doanh V-Pharma:**\n" +
+                    $"- **Tổng số đơn hàng:** {totalOrders}\n" +
+                    $"- **Đơn chờ xử lý / chuẩn bị:** {pendingOrders}\n" +
+                    $"- **Đơn đã giao thành công:** {deliveredOrders}\n" +
+                    $"- **Đơn đã hủy:** {cancelledOrders}\n" +
+                    $"- **Tổng doanh thu thực tế:** **{totalRevenue:N0}đ**\n",
+            data = new { totalOrders, pendingOrders, deliveredOrders, cancelledOrders, totalRevenue }
+        });
+    }
+
+    if (lower.Contains("flash sale") || lower.Contains("khuyến mãi"))
+    {
+        var now = DateTime.UtcNow;
+        var activeFs = await db.FlashSales.Include(fs => fs.Items).FirstOrDefaultAsync(fs => fs.IsActive && fs.StartTime <= now && now <= fs.EndTime);
+        if (activeFs != null)
+        {
+            var totalSold = activeFs.Items.Sum(i => i.SoldCount);
+            var totalLimit = activeFs.Items.Sum(i => i.QuantityLimit);
+            return Results.Ok(new
+            {
+                reply = $"⚡ **Chiến dịch Flash Sale đang chạy:** '{activeFs.Name}'\n" +
+                        $"- Thời gian: {activeFs.StartTime:dd/MM HH:mm} - {activeFs.EndTime:dd/MM HH:mm} UTC\n" +
+                        $"- Số sản phẩm tham gia: {activeFs.Items.Count}\n" +
+                        $"- Tỷ lệ bán: {totalSold}/{totalLimit} suất ({Math.Round((double)totalSold * 100 / Math.Max(1, totalLimit), 1)}%)",
+                data = new { activeFs.Name, totalSold, totalLimit }
+            });
+        }
+        else
+        {
+            return Results.Ok(new { reply = "Hiện tại không có chiến dịch Flash Sale nào đang kích hoạt." });
+        }
+    }
+
+    return Results.Ok(new
+    {
+        reply = $"Xin chào {user.FullName} ({user.Role})! Tôi là V-Pharma Admin Copilot.\n" +
+                $"Bạn có thể hỏi tôi về:\n" +
+                $"- 'Báo cáo tồn kho': Kiểm tra số liệu P, Q, B, R, A, U và cảnh báo thiếu hàng\n" +
+                $"- 'Báo cáo đơn hàng' hoặc 'Doanh thu': Xem tổng quan KPI bán hàng\n" +
+                $"- 'Flash sale': Xem tình hình chiến dịch khuyến mãi đang chạy\n" +
+                $"- Hỗ trợ tra cứu các thao tác trong Admin Live Panel."
+    });
+});
+
 app.Run();
 
 // DTO Definitions
@@ -1400,3 +1882,8 @@ public sealed record QCInspectionRequest(bool IsPassed, string? Note);
 public sealed record CreateTicketRequest(string? CustomerName, string? CustomerEmail, string Subject, string? Category, string? Priority, string Message, int? RelatedOrderId);
 public sealed record ReplyTicketRequest(string Message, string? SenderName);
 public sealed record UpdateTicketStatusRequest(string Status);
+
+public sealed record CreateFlashSaleItemRequest(int VariantId, decimal FlashSalePrice, int QuantityLimit);
+public sealed record CreateFlashSaleRequest(string Name, string? Description, DateTime StartTime, DateTime EndTime, List<CreateFlashSaleItemRequest> Items);
+public sealed record CustomerChatRequest(string Message, string? SessionId = null);
+public sealed record AdminChatRequest(string Message);

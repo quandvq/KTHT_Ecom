@@ -184,6 +184,60 @@ export interface PromotionValidation {
   totalAmount: number
 }
 
+export interface FlashSaleItem {
+  id: number
+  productId: number
+  productName: string
+  productSlug: string
+  imageUrl: string | null
+  packageSize?: string | null
+  saleUnit?: string | null
+  variantId: number
+  sku: string
+  variantName: string
+  originalPrice: number
+  flashSalePrice: number
+  discountPercentage: number
+  quantityLimit: number
+  soldCount: number
+  remainingQuota: number
+  isSoldOut: boolean
+}
+
+export interface FlashSaleCampaign {
+  id: number
+  name: string
+  description?: string | null
+  startTime: string
+  endTime: string
+  remainingSeconds: number
+  items: FlashSaleItem[]
+}
+
+export interface ActiveFlashSaleResponse {
+  active: boolean
+  message?: string
+  campaign?: FlashSaleCampaign
+}
+
+export interface ChatMessage {
+  id: string
+  sender: 'user' | 'bot'
+  text: string
+  timestamp: string
+  products?: Array<{
+    id: number
+    name: string
+    slug: string
+    imageUrl: string | null
+    packageSize?: string | null
+    saleUnit?: string | null
+    price: number
+    sku: string
+  }>
+  suggestions?: string[]
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string = 'Không thể tải dữ liệu. Vui lòng thử lại.') {
     super(message)

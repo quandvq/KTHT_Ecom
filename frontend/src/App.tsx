@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode, type FormEvent } from 'react'
 import {
-  ApiError, getJson, postJson, safeStorageGet, safeStorageSet, safeStorageRemove,
+  ApiError, getJson, postJson, putJson, safeStorageGet, safeStorageSet, safeStorageRemove,
   type Category, type Brand, type Product, type ProductPage, type ProductDetail,
   type User, type CartItem, type Order, type DashboardStats, type InventoryBalance,
-  type ReturnRequest, type SupportTicket, type PromotionValidation
+  type ReturnRequest, type SupportTicket, type PromotionValidation,
+  type ActiveFlashSaleResponse, type FlashSaleItem, type ChatMessage
 } from './products'
 import './styles/catalog.css'
 
@@ -22,7 +23,7 @@ function useLocation() {
   return location
 }
 
-export function Link({ href, children, className, style }: { href: string; children: ReactNode; className?: string; style?: React.CSSProperties }) {
+export function Link({ href, children, className, style, onClick }: { href: string; children: ReactNode; className?: string; style?: React.CSSProperties; onClick?: () => void }) {
   return (
     <a
       className={className}
@@ -31,6 +32,7 @@ export function Link({ href, children, className, style }: { href: string; child
       onClick={event => {
         if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
           event.preventDefault()
+          onClick?.()
           navigate(href)
         }
       }}
@@ -202,6 +204,269 @@ export function CategoryNavigation({ categories }: { categories: Category[] }) {
   )
 }
 
+export function ModernFooter() {
+  return (
+    <footer className="shop-footer">
+      <div className="shop-container">
+        <div className="shop-footer-grid">
+          {/* Cột 1: V-Pharma & Giới thiệu */}
+          <div className="shop-footer-col">
+            <div className="shop-footer-brand">
+              <span aria-hidden="true">V</span>
+              <span>V-Pharma</span>
+            </div>
+            <p>Hệ thống nhà thuốc trực tuyến đạt chuẩn <strong>GPP</strong> — Đồng hành cùng sức khỏe gia đình Việt với 100% thuốc & thực phẩm chức năng chính hãng.</p>
+            <p style={{ fontSize: 12, color: '#64748b' }}>
+              Giấy chứng nhận ĐKKD số: 0312345678 do Sở KH&ĐT TP.HCM cấp.<br />
+              Chứng chỉ hành nghề Dược số: 009876/CCHN-D-HCM.
+            </p>
+          </div>
+
+          {/* Cột 2: Về V-Pharma */}
+          <div className="shop-footer-col">
+            <h3>Về V-Pharma</h3>
+            <ul className="shop-footer-links">
+              <li><Link href="/products">Giới thiệu hệ thống</Link></li>
+              <li><Link href="/products">Hệ thống nhà thuốc</Link></li>
+              <li><Link href="/products">Giấy phép kinh doanh dược</Link></li>
+              <li><Link href="/products">Tuyển dụng dược sĩ</Link></li>
+              <li><Link href="/products">Chính sách bảo mật</Link></li>
+            </ul>
+          </div>
+
+          {/* Cột 3: Hỗ trợ khách hàng */}
+          <div className="shop-footer-col">
+            <h3>Hỗ trợ khách hàng</h3>
+            <ul className="shop-footer-links">
+              <li><Link href="/cart">Hướng dẫn mua hàng</Link></li>
+              <li><Link href="/cart">Chính sách đổi trả 30 ngày</Link></li>
+              <li><Link href="/cart">Chính sách giao hàng 2h</Link></li>
+              <li><Link href="/cart">Phương thức thanh toán</Link></li>
+              <li><Link href="/account/orders">Tra cứu đơn hàng</Link></li>
+            </ul>
+          </div>
+
+          {/* Cột 4: Hotline & Liên hệ */}
+          <div className="shop-footer-col">
+            <h3>Tổng đài tư vấn miễn phí</h3>
+            <a href="tel:18006828" className="shop-footer-hotline">
+              📞 1800 6828
+            </a>
+            <p style={{ fontSize: 12, marginBottom: 14 }}>Tư vấn sử dụng thuốc & CSKH (8:00 - 21:30 hàng ngày, miễn phí cước gọi)</p>
+
+            <div className="shop-footer-contact-item">
+              <span>✉️</span>
+              <div>
+                <strong>Email hỗ trợ:</strong>
+                <span>cskh@vpharma.vn</span>
+              </div>
+            </div>
+
+            <div className="shop-footer-contact-item">
+              <span>📍</span>
+              <div>
+                <strong>Trụ sở chính:</strong>
+                <span>59C Nguyễn Đình Chiểu, P. Võ Thị Sáu, Q. 3, TP. Hồ Chí Minh</span>
+              </div>
+            </div>
+
+            <div className="shop-footer-contact-item">
+              <span>🕒</span>
+              <div>
+                <strong>Giờ hoạt động:</strong>
+                <span>07:00 - 22:00 (Tất cả các ngày trong tuần)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="shop-footer-bottom">
+          <p>© 2026 V-Pharma. Tất cả các quyền được bảo lưu. Nền tảng Dược phẩm & Chăm sóc Sức khỏe Trực tuyến.</p>
+          <p>Lưu ý: Mọi thông tin trên website chỉ mang tính chất tham khảo. Vui lòng tham khảo ý kiến Bác sĩ hoặc Dược sĩ trước khi dùng thuốc.</p>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+export function CustomerChatbot() {
+  const [isOpen, setIsOpen] = useState(false)
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome',
+      sender: 'bot',
+      text: 'Xin chào! Em là Trợ lý Dược sĩ V-Pharma 🌿.\nEm có thể hỗ trợ bạn tìm kiếm thuốc, vitamin, kiểm tra đơn hàng hoặc giải đáp chính sách giao nhận 2h.',
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      suggestions: ['Tìm vitamin C', 'Flash Sale hôm nay', 'Chính sách đổi trả', 'Hotline 1800 6828']
+    }
+  ])
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, isOpen])
+
+  async function handleSend(textToSend?: string) {
+    const text = (textToSend ?? input).trim()
+    if (!text || loading) return
+
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      sender: 'user',
+      text,
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    }
+    setMessages(prev => [...prev, userMsg])
+    setInput('')
+    setLoading(true)
+
+    try {
+      const res = await postJson<{ reply: string; suggestions?: string[]; products?: any[] }>('/chat/customer', { message: text })
+      const botMsg: ChatMessage = {
+        id: `bot-${Date.now()}`,
+        sender: 'bot',
+        text: res.reply,
+        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        suggestions: res.suggestions,
+        products: res.products
+      }
+      setMessages(prev => [...prev, botMsg])
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `bot-err-${Date.now()}`,
+          sender: 'bot',
+          text: 'Rất tiếc, hệ thống đang bận. Bạn vui lòng liên hệ Hotline trực tiếp **1800 6828** (miễn phí) để được Dược sĩ V-Pharma hỗ trợ ngay nhé!',
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+        }
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      {!isOpen && (
+        <button
+          className="shop-chatbot-toggle"
+          onClick={() => setIsOpen(true)}
+          aria-label="Mở Trợ lý V-Pharma"
+        >
+          <span className="badge-pulse" aria-hidden="true" />
+          <span>💬 Trợ lý Dược sĩ V-Pharma</span>
+        </button>
+      )}
+
+      {isOpen && (
+        <div className="shop-chatbot-window" role="dialog" aria-label="Khung chat V-Pharma">
+          <div className="shop-chatbot-header">
+            <div className="shop-chatbot-header-info">
+              <div className="shop-chatbot-avatar">V</div>
+              <div>
+                <div className="shop-chatbot-title">Dược sĩ V-Pharma</div>
+                <div className="shop-chatbot-subtitle">Trực tuyến 24/7</div>
+              </div>
+            </div>
+            <button className="shop-chatbot-close" onClick={() => setIsOpen(false)} aria-label="Đóng chat">✕</button>
+          </div>
+
+          <div className="shop-chatbot-disclaimer">
+            <span>⚕️</span>
+            <span>Tư vấn thông tin sản phẩm. Không thay thế chẩn đoán y khoa.</span>
+          </div>
+
+          <div className="shop-chatbot-body">
+            {messages.map(msg => (
+              <div key={msg.id} className={`chat-msg ${msg.sender === 'user' ? 'chat-msg-user' : 'chat-msg-bot'}`}>
+                <div className="chat-bubble">{msg.text}</div>
+                <span className="chat-time">{msg.timestamp}</span>
+
+                {msg.products && msg.products.length > 0 && (
+                  <div className="chat-products">
+                    {msg.products.map(p => (
+                      <Link
+                        key={p.id}
+                        href={`/products/${p.slug}`}
+                        className="chat-product-item"
+                        onClick={() => setIsOpen(false)}
+                      >
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt={p.name} />
+                        ) : (
+                          <div style={{ width: 44, height: 44, background: '#e2e8f0', borderRadius: 6, display: 'grid', placeItems: 'center', fontSize: 16 }}>💊</div>
+                        )}
+                        <div className="chat-product-info">
+                          <div className="chat-product-name">{p.name}</div>
+                          <div className="chat-product-price">{money(p.price)}</div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
+                {msg.suggestions && msg.suggestions.length > 0 && (
+                  <div className="chat-chips">
+                    {msg.suggestions.map((s, idx) => (
+                      <button
+                        key={idx}
+                        className="chat-chip"
+                        onClick={() => handleSend(s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {loading && (
+              <div className="chat-msg chat-msg-bot">
+                <div className="shop-chatbot-typing">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <form
+            className="shop-chatbot-footer"
+            onSubmit={e => {
+              e.preventDefault()
+              handleSend()
+            }}
+          >
+            <input
+              className="shop-chatbot-input"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Nhập câu hỏi hoặc tên thuốc..."
+              maxLength={300}
+            />
+            <button
+              type="submit"
+              className="shop-chatbot-send"
+              disabled={loading || !input.trim()}
+              aria-label="Gửi tin nhắn"
+            >
+              ➤
+            </button>
+          </form>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function CustomerLayout({ children, categories, query }: { children: ReactNode; categories: Category[]; query: string }) {
   const { user, logout } = useAuth()
   const { totalCount } = useCart()
@@ -210,10 +475,10 @@ export function CustomerLayout({ children, categories, query }: { children: Reac
   return (
     <div className="shop">
       <a className="shop-skip" href="#main-content">Đến nội dung</a>
-      <div className="shop-announcement">KTHT E-commerce · Cửa hàng demo dược phẩm & tiêu dùng</div>
+      <div className="shop-announcement">V-Pharma · Hệ thống nhà thuốc trực tuyến chính hãng & Giao hàng 2 giờ · Hotline: 1800 6828</div>
       <header className="shop-header shop-container">
         <Link href="/" className="shop-brand">
-          <span aria-hidden="true">K</span>KTHT<span className="shop-brand-sub">E-commerce</span>
+          <span aria-hidden="true">V</span>V-Pharma<span className="shop-brand-sub">Nhà thuốc trực tuyến</span>
         </Link>
         <SearchBar query={query} />
         <div className="shop-account">
@@ -251,15 +516,9 @@ export function CustomerLayout({ children, categories, query }: { children: Reac
       <main id="main-content" className="shop-container shop-main">
         {children}
       </main>
-      <footer className="shop-footer">
-        <div className="shop-container">
-          <strong>KTHT E-commerce</strong>
-          <p>Mua sắm trực tuyến với thông tin sản phẩm và giá được kiểm tra tại máy chủ.</p>
-          <p>Giữ hàng nguyên tử và theo dõi đơn hàng minh bạch.</p>
-          <Link href="/products">Khám phá danh mục sản phẩm</Link>
-          <span>© 2026 KTHT E-commerce. Nền tảng thương mại điện tử UEH.</span>
-        </div>
-      </footer>
+      <ModernFooter />
+
+      <CustomerChatbot />
 
       {authModal && <AuthModal mode={authModal} onClose={() => setAuthModal(null)} />}
     </div>
@@ -307,11 +566,11 @@ function AuthModal({ mode, onClose }: { mode: 'login' | 'register'; onClose: () 
     <div className="shop-modal-backdrop" onClick={onClose}>
       <div className="shop-modal" onClick={e => e.stopPropagation()}>
         <div className="shop-modal-header">
-          <h2>{currentMode === 'login' ? 'Đăng nhập tài khoản' : 'Đăng ký tài khoản mới'}</h2>
+          <h2>{currentMode === 'login' ? 'Đăng nhập V-Pharma' : 'Đăng ký tài khoản mới'}</h2>
           <button onClick={onClose} aria-label="Đóng">✕</button>
         </div>
-        {error && <p role="alert" style={{ color: '#dc2626', marginBottom: 16 }}>{error}</p>}
-        <form onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
+        {error && <div className="shop-alert-error" role="alert">{error}</div>}
+        <form onSubmit={submit}>
           {currentMode === 'register' && (
             <>
               <label className="shop-field">Họ và tên
@@ -328,19 +587,113 @@ function AuthModal({ mode, onClose }: { mode: 'login' | 'register'; onClose: () 
           <label className="shop-field">Mật khẩu
             <input required type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Tối thiểu 6 ký tự" />
           </label>
-          <button type="submit" disabled={loading} style={{ marginTop: 8 }}>
+          <button type="submit" className="btn-modal-submit" disabled={loading}>
             {loading ? 'Đang xử lý…' : (currentMode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản')}
           </button>
         </form>
-        <p style={{ marginTop: 18, fontSize: 13, textAlign: 'center' }}>
+        <p style={{ marginTop: 20, fontSize: 13, textAlign: 'center', color: '#64748b' }}>
           {currentMode === 'login' ? (
-            <>Chưa có tài khoản? <button onClick={() => { setCurrentMode('register'); setError('') }} style={{ background: 'none', border: 0, color: 'var(--shop-primary)', padding: 0, font: 'inherit', cursor: 'pointer', fontWeight: 600 }}>Đăng ký ngay</button></>
+            <>Chưa có tài khoản? <button onClick={() => { setCurrentMode('register'); setError('') }} style={{ background: 'none', border: 0, color: 'var(--shop-primary)', padding: 0, font: 'inherit', cursor: 'pointer', fontWeight: 700 }}>Đăng ký ngay</button></>
           ) : (
-            <>Đã có tài khoản? <button onClick={() => { setCurrentMode('login'); setError('') }} style={{ background: 'none', border: 0, color: 'var(--shop-primary)', padding: 0, font: 'inherit', cursor: 'pointer', fontWeight: 600 }}>Đăng nhập</button></>
+            <>Đã có tài khoản? <button onClick={() => { setCurrentMode('login'); setError('') }} style={{ background: 'none', border: 0, color: 'var(--shop-primary)', padding: 0, font: 'inherit', cursor: 'pointer', fontWeight: 700 }}>Đăng nhập</button></>
           )}
         </p>
       </div>
     </div>
+  )
+}
+
+export function FlashSaleSection() {
+  const resource = useResource<ActiveFlashSaleResponse>('/flash-sales/active')
+  const { addItem } = useCart()
+  const [secondsLeft, setSecondsLeft] = useState<number>(0)
+  const [addedSku, setAddedSku] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (resource.data?.campaign?.remainingSeconds) {
+      setSecondsLeft(resource.data.campaign.remainingSeconds)
+    }
+  }, [resource.data])
+
+  useEffect(() => {
+    if (secondsLeft <= 0) return
+    const timer = setInterval(() => {
+      setSecondsLeft(prev => Math.max(0, prev - 1))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [secondsLeft])
+
+  if (!resource.data?.active || !resource.data.campaign || resource.data.campaign.items.length === 0) {
+    return null
+  }
+
+  const campaign = resource.data.campaign
+  const hours = Math.floor(secondsLeft / 3600)
+  const minutes = Math.floor((secondsLeft % 3600) / 60)
+  const seconds = secondsLeft % 60
+
+  return (
+    <section className="shop-flashsale-section">
+      <div className="shop-flashsale-header">
+        <div className="shop-flashsale-title">
+          <span>⚡</span> {campaign.name}
+        </div>
+        <div className="shop-flashsale-countdown">
+          <span>KẾT THÚC TRONG:</span>
+          <span className="shop-countdown-box">{String(hours).padStart(2, '0')}</span> :
+          <span className="shop-countdown-box">{String(minutes).padStart(2, '0')}</span> :
+          <span className="shop-countdown-box">{String(seconds).padStart(2, '0')}</span>
+        </div>
+      </div>
+
+      <div className="shop-product-grid">
+        {campaign.items.slice(0, 4).map(item => {
+          const percentSold = Math.min(100, Math.round((item.soldCount * 100) / Math.max(1, item.quantityLimit)))
+          return (
+            <article key={item.id} className="shop-product-card shop-flashsale-card">
+              <span className="shop-flashsale-badge">-{item.discountPercentage}%</span>
+              <Link href={`/products/${item.productSlug}`}>
+                <ProductImage src={item.imageUrl} name={item.productName} />
+                <div className="shop-card-content">
+                  <small>{item.variantName || item.sku}</small>
+                  <h3>{item.productName}</h3>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBlock: 'auto 6px' }}>
+                    <strong style={{ color: '#dc2626', fontSize: 18 }}>{money(item.flashSalePrice)}</strong>
+                    <span style={{ textDecoration: 'line-through', color: '#94a3b8', fontSize: 12 }}>{money(item.originalPrice)}</span>
+                  </div>
+
+                  <div className="shop-flashsale-progress">
+                    <div className="shop-flashsale-progress-bar" style={{ width: `${percentSold}%` }} />
+                    <span className="shop-flashsale-progress-text">ĐÃ BÁN {item.soldCount}/{item.quantityLimit}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    style={{ marginTop: 12, width: '100%', background: '#dc2626', borderRadius: 8, height: 38, padding: 0 }}
+                    onClick={e => {
+                      e.preventDefault()
+                      addItem({
+                        sku: item.sku,
+                        productId: item.productId,
+                        productName: item.productName,
+                        variantName: item.variantName,
+                        imageUrl: item.imageUrl,
+                        price: item.flashSalePrice,
+                        quantity: 1
+                      })
+                      setAddedSku(item.sku)
+                      setTimeout(() => setAddedSku(null), 2000)
+                    }}
+                  >
+                    {addedSku === item.sku ? '✓ Đã thêm vào giỏ' : 'Săn deal ngay'}
+                  </button>
+                </div>
+              </Link>
+            </article>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -387,16 +740,17 @@ function HomePage({ categories }: { categories: Category[] }) {
     <>
       <section className="shop-hero">
         <div>
-          <p className="shop-eyebrow">KHÁM PHÁ CÙNG KTHT</p>
+          <p className="shop-eyebrow">CHĂM SÓC SỨC KHỎE CÙNG V-PHARMA</p>
           <h1>Lựa chọn mỗi ngày,<br />dễ dàng hơn.</h1>
-          <p>Tìm sản phẩm theo nhu cầu, xem rõ thông tin, nhãn hiệu và lựa chọn phiên bản phù hợp.</p>
+          <p>Thuốc, vitamin và thực phẩm chức năng chính hãng 100%. Tư vấn tận tâm bởi đội ngũ dược sĩ chuyên môn.</p>
           <Link href="/products" className="shop-primary">Khám phá sản phẩm →</Link>
         </div>
         <div className="shop-hero-art" role="img" aria-label="Hình minh họa danh mục">
-          <span>KTHT</span>
-          <small>Cửa hàng trực tuyến KTHT</small>
+          <span>V-Pharma</span>
+          <small>Hệ thống nhà thuốc đạt chuẩn GPP</small>
         </div>
       </section>
+      <FlashSaleSection />
       <section className="shop-section">
         <h2>Khám phá danh mục</h2>
         {categories.length ? (
@@ -842,58 +1196,58 @@ function CheckoutPage() {
 
       <form onSubmit={handlePlaceOrder} className="shop-checkout-grid">
         <div className="shop-checkout-card">
-          <h2>Địa chỉ nhận hàng</h2>
+          <h2><span>📍</span> Địa chỉ nhận hàng</h2>
           <div style={{ display: 'grid', gap: 14, marginTop: 16 }}>
-            <label className="shop-field">Họ và tên người nhận
+            <label className="shop-checkout-field">Họ và tên người nhận
               <input required value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Nguyễn Văn A" />
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <label className="shop-field">Số điện thoại
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+              <label className="shop-checkout-field">Số điện thoại
                 <input required value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="0901234567" />
               </label>
-              <label className="shop-field">Email nhận thông báo
+              <label className="shop-checkout-field">Email nhận thông báo
                 <input required type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} placeholder="email@example.com" />
               </label>
             </div>
-            <label className="shop-field">Địa chỉ chi tiết (Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành)
+            <label className="shop-checkout-field">Địa chỉ chi tiết (Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành)
               <input required value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} placeholder="59C Nguyễn Đình Chiểu, Phường Võ Thị Sáu, Quận 3, TP.HCM" />
             </label>
-            <label className="shop-field">Ghi chú giao hàng (Tùy chọn)
-              <input value={note} onChange={e => setNote(e.target.value)} placeholder="Giao giờ hành chính, gọi trước khi giao..." />
+            <label className="shop-checkout-field">Ghi chú giao hàng (Tùy chọn)
+              <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Giao giờ hành chính, gọi trước khi giao..." />
             </label>
           </div>
 
-          <h2 style={{ marginTop: 32 }}>Phương thức thanh toán</h2>
+          <h2 style={{ marginTop: 32 }}><span>💳</span> Phương thức thanh toán</h2>
           <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 14, border: '1px solid var(--shop-border)', borderRadius: 8, cursor: 'pointer' }}>
-              <input type="radio" name="paymentMethod" value="COD" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} style={{ width: 'auto' }} />
+            <label className={`shop-payment-option ${paymentMethod === 'COD' ? 'active' : ''}`}>
+              <input type="radio" name="paymentMethod" value="COD" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} />
               <div>
                 <strong>Thanh toán tiền mặt khi nhận hàng (COD)</strong>
-                <small style={{ display: 'block', color: '#64748b' }}>Thanh toán cho nhân viên giao vận khi kiểm tra hàng</small>
+                <small style={{ display: 'block', color: '#64748b', marginTop: 2 }}>Thanh toán trực tiếp cho nhân viên giao vận sau khi đồng kiểm bao bì sản phẩm</small>
               </div>
             </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 14, border: '1px solid var(--shop-border)', borderRadius: 8, cursor: 'pointer' }}>
-              <input type="radio" name="paymentMethod" value="BankTransfer" checked={paymentMethod === 'BankTransfer'} onChange={() => setPaymentMethod('BankTransfer')} style={{ width: 'auto' }} />
+            <label className={`shop-payment-option ${paymentMethod === 'BankTransfer' ? 'active' : ''}`}>
+              <input type="radio" name="paymentMethod" value="BankTransfer" checked={paymentMethod === 'BankTransfer'} onChange={() => setPaymentMethod('BankTransfer')} />
               <div>
-                <strong>Chuyển khoản ngân hàng (Mô phỏng)</strong>
-                <small style={{ display: 'block', color: '#64748b' }}>Chuyển qua mã QR ngân hàng hoặc Internet Banking</small>
+                <strong>Chuyển khoản ngân hàng / VNPay (Mô phỏng)</strong>
+                <small style={{ display: 'block', color: '#64748b', marginTop: 2 }}>Quét mã QR VietQR hoặc chuyển khoản Internet Banking an toàn & bảo mật</small>
               </div>
             </label>
           </div>
         </div>
 
-        <div className="shop-cart-summary">
-          <h2>Đơn hàng ({items.length} món)</h2>
-          <div style={{ marginBlock: 16 }}>
+        <div className="shop-checkout-summary">
+          <h2 style={{ fontSize: 18, marginTop: 0, marginBottom: 16 }}>Đơn hàng ({items.length} món)</h2>
+          <div style={{ marginBlock: 16, maxHeight: 260, overflowY: 'auto' }}>
             {items.map(i => (
-              <div key={i.sku} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                <span>{i.productName} ({i.quantity}x)</span>
+              <div key={i.sku} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
+                <span style={{ maxWidth: '65%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.productName} (x{i.quantity})</span>
                 <strong>{money(i.price * i.quantity)}</strong>
               </div>
             ))}
           </div>
           <div style={{ borderBlock: '1px solid var(--shop-border)', paddingBlock: 16, marginBottom: 16 }}>
-            <label className="shop-field" htmlFor="promotion-code">Mã khuyến mãi</label>
+            <label className="shop-field" htmlFor="promotion-code" style={{ marginBottom: 8, fontWeight: 700 }}>Mã khuyến mãi</label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 id="promotion-code"
@@ -902,26 +1256,37 @@ function CheckoutPage() {
                 disabled={promotionLoading}
                 maxLength={50}
                 placeholder="Nhập một mã"
+                style={{ height: 42, borderRadius: 8 }}
               />
               {promotion ? (
-                <button type="button" className="btn-secondary" onClick={removePromotion}>Bỏ mã</button>
+                <button type="button" className="btn-secondary" onClick={removePromotion} style={{ borderRadius: 8, height: 42, paddingInline: 14 }}>Bỏ mã</button>
               ) : (
-                <button type="button" onClick={applyPromotion} disabled={promotionLoading || !promotionInput.trim()}>
+                <button type="button" onClick={applyPromotion} disabled={promotionLoading || !promotionInput.trim()} style={{ borderRadius: 8, height: 42, paddingInline: 16 }}>
                   {promotionLoading ? 'Đang kiểm tra…' : 'Áp dụng'}
                 </button>
               )}
             </div>
-            {promotionError && <p role="alert" style={{ color: '#b91c1c', fontSize: 13 }}>{promotionError}</p>}
-            {promotion && <p role="status" style={{ color: '#15803d', fontSize: 13 }}>Đã áp dụng {promotion.code}: {promotion.description}</p>}
-            <small>Mỗi đơn hàng chỉ áp dụng một mã. Mã sẽ được kiểm tra lại khi đặt hàng.</small>
+            {promotionError && <p role="alert" style={{ color: '#b91c1c', fontSize: 13, marginTop: 8 }}>{promotionError}</p>}
+            {promotion && <p role="status" style={{ color: '#15803d', fontSize: 13, marginTop: 8, fontWeight: 600 }}>Đã áp dụng {promotion.code}: {promotion.description}</p>}
+            <small style={{ display: 'block', color: '#64748b', marginTop: 6 }}>Mỗi đơn hàng chỉ áp dụng một mã. Mã sẽ được kiểm tra lại khi đặt hàng.</small>
           </div>
-          <hr style={{ border: 0, borderTop: '1px solid var(--shop-border)', marginBottom: 16 }} />
-          <div style={{ display: 'grid', gap: 8, marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Tạm tính:</span><strong>{money(promotion?.subtotal ?? totalAmount)}</strong></div>
-            {promotion && <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d' }}><span>Giảm giá ({promotion.code}):</span><strong>−{money(promotion.discountAmount)}</strong></div>}
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18 }}><span>Tổng tiền:</span><strong style={{ color: 'var(--shop-primary)' }}>{money(promotion?.totalAmount ?? totalAmount)}</strong></div>
+          <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}><span>Tạm tính:</span><span>{money(promotion?.subtotal ?? totalAmount)}</span></div>
+            {promotion && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d', fontSize: 14, fontWeight: 600 }}>
+                <span>Giảm giá ({promotion.code}):</span><span>−{money(promotion.discountAmount)}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
+              <span>Phí vận chuyển:</span>
+              <span style={{ color: '#15803d', fontWeight: 600 }}>Miễn phí (Toàn quốc)</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, borderTop: '1px solid var(--shop-border)', paddingTop: 14, marginTop: 4 }}>
+              <strong>Tổng tiền:</strong>
+              <strong style={{ color: 'var(--shop-primary)', fontSize: 20 }}>{money(promotion?.totalAmount ?? totalAmount)}</strong>
+            </div>
           </div>
-          <button type="submit" disabled={submitting} style={{ width: '100%', padding: 14, fontSize: 16 }}>
+          <button type="submit" disabled={submitting} className="shop-primary" style={{ width: '100%', height: 46, fontSize: 16, fontWeight: 700, borderRadius: 8 }}>
             {submitting ? 'Đang tạo đơn & giữ tồn kho…' : 'Xác nhận Đặt hàng →'}
           </button>
         </div>
@@ -941,10 +1306,10 @@ function OrderResultPage({ orderCode }: { orderCode: string }) {
 
   const order = resource.data
   return (
-    <div style={{ maxWidth: 640, marginInline: 'auto', background: 'white', padding: 36, borderRadius: 12, border: '1px solid var(--shop-border)', textAlign: 'center' }}>
-      <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#dcfce7', color: '#15803d', display: 'grid', placeItems: 'center', fontSize: 32, margin: '0 auto 16px' }}>✓</div>
+    <div style={{ maxWidth: 640, marginInline: 'auto', background: 'white', padding: 36, borderRadius: 14, border: '1px solid var(--shop-border)', textAlign: 'center', boxShadow: '0 8px 30px rgba(15, 23, 42, 0.06)' }}>
+      <div style={{ width: 68, height: 68, borderRadius: '50%', background: '#dcfce7', color: '#15803d', display: 'grid', placeItems: 'center', fontSize: 34, margin: '0 auto 16px' }}>✓</div>
       <h1>Đặt hàng thành công!</h1>
-      <p>Cảm ơn bạn đã mua sắm tại KTHT E-commerce. Mã đơn hàng của bạn là:</p>
+      <p>Cảm ơn bạn đã mua sắm tại V-Pharma. Mã đơn hàng của bạn là:</p>
       <div style={{ background: '#edf4ff', padding: 14, borderRadius: 8, fontSize: 22, fontWeight: 800, color: 'var(--shop-primary)', marginBlock: 16 }}>
         {order.orderCode}
       </div>
@@ -952,7 +1317,7 @@ function OrderResultPage({ orderCode }: { orderCode: string }) {
       <p style={{ color: '#64748b', fontSize: 13 }}>Địa chỉ giao hàng: {order.shippingAddress}</p>
       <div style={{ marginTop: 28, display: 'flex', gap: 14, justifyContent: 'center' }}>
         <Link href={`/account/orders/${order.orderCode}`} className="shop-primary">Xem chi tiết đơn hàng</Link>
-        <Link href="/products" className="btn-secondary" style={{ padding: '10px 18px', borderRadius: 6, fontWeight: 600 }}>Tiếp tục mua hàng</Link>
+        <Link href="/products" className="btn-secondary" style={{ padding: '10px 18px', borderRadius: 8, fontWeight: 600 }}>Tiếp tục mua sắm</Link>
       </div>
     </div>
   )
@@ -1279,31 +1644,30 @@ export function AdminLayout() {
     return (
       <div className="shop admin-shell">
         <aside>
-          <Link href="/" className="shop-brand">KTHT</Link>
-          <h2>Quản trị nội bộ</h2>
+          <Link href="/" className="shop-brand">KTHT <span>Admin</span></Link>
+          <h2>Phân hệ quản trị</h2>
           <nav aria-label="Module quản trị">
             {['Dashboard', 'Sản phẩm', 'Đơn hàng', 'Khách hàng', 'Kho', 'Vận chuyển', 'Hậu mãi', 'Thanh toán', 'Báo cáo', 'Nhân viên', 'Cấu hình'].map(module => (
-              <span key={module} aria-disabled="true">{module}<small>Chưa triển khai</small></span>
+              <span key={module} aria-disabled="true">{module}<small>Sắp có</small></span>
             ))}
           </nav>
         </aside>
         <div>
-          <header>KTHT E-commerce · Khung quản trị</header>
+          <header><strong>Trung tâm vận hành</strong><Link href="/">Về cửa hàng</Link></header>
           <main>
-            <nav aria-label="Đường dẫn">Quản trị / Tổng quan</nav>
-            <h1>Khu vực quản trị</h1>
-            <p>Vui lòng đăng nhập với tài khoản nhân viên (Admin, Sales, Warehouse, CustomerSupport) để truy cập hệ thống quản trị vận hành.</p>
-            <div style={{ background: 'white', padding: 20, borderRadius: 10, border: '1px solid var(--shop-border)', maxWidth: 440, marginTop: 20 }}>
-              <p><strong>Tài khoản mẫu để thử nghiệm:</strong></p>
+            <nav aria-label="Đường dẫn">Quản trị / Đăng nhập</nav>
+            <div className="admin-page-heading">
+              <div><span className="admin-eyebrow">Truy cập nội bộ</span><h1>Đăng nhập để tiếp tục</h1></div>
+              <p>Dành cho nhân viên được phân quyền.</p>
+            </div>
+            <div className="admin-access-card">
+              <p><strong>Tài khoản demo</strong></p>
               <ul style={{ paddingLeft: 20, fontSize: 13, color: '#475569' }}>
                 <li>Admin: <code>admin@ktht.local</code> / <code>Ktht@2026</code></li>
                 <li>Sales: <code>sales@ktht.local</code> / <code>Ktht@2026</code></li>
                 <li>Warehouse: <code>warehouse@ktht.local</code> / <code>Ktht@2026</code></li>
                 <li>Support: <code>support@ktht.local</code> / <code>Ktht@2026</code></li>
               </ul>
-            </div>
-            <div style={{ marginTop: 20 }}>
-              <Link href="/">Về cửa hàng</Link>
             </div>
           </main>
         </div>
@@ -1315,7 +1679,7 @@ export function AdminLayout() {
 }
 
 function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'inventory' | 'returns' | 'tickets'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'inventory' | 'returns' | 'tickets' | 'flashsale' | 'copilot'>('dashboard')
   const dashboard = useResource<DashboardStats>('/admin/dashboard')
   const inventory = useResource<InventoryBalance[]>('/admin/inventory')
   const orders = useResource<{ items: Order[] }>('/admin/orders')
@@ -1326,17 +1690,19 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
   return (
     <div className="shop admin-shell">
       <aside>
-        <Link href="/" className="shop-brand">KTHT<span>.Admin</span></Link>
-        <div style={{ paddingBlock: 12, borderBottom: '1px solid #e2e8f0', marginBottom: 16 }}>
+        <Link href="/" className="shop-brand">V-Pharma <span>Admin</span></Link>
+        <div className="admin-user-card">
           <strong>{user.fullName}</strong>
           <small>{user.role} · {user.email}</small>
         </div>
         <nav aria-label="Module quản trị">
-          <button className={`shop-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>📊 Tổng quan KPI</button>
-          <button className={`shop-tab ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>📋 Đơn hàng & Xử lý</button>
-          <button className={`shop-tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>🏭 Kho & Tồn (P,Q,B,R,A,U)</button>
-          <button className={`shop-tab ${activeTab === 'returns' ? 'active' : ''}`} onClick={() => setActiveTab('returns')}>🔄 Đổi trả & QC (RMA)</button>
-          <button className={`shop-tab ${activeTab === 'tickets' ? 'active' : ''}`} onClick={() => setActiveTab('tickets')}>💬 CSKH & Ticket</button>
+          <button className={`shop-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>Tổng quan</button>
+          <button className={`shop-tab ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>Đơn hàng</button>
+          <button className={`shop-tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>Tồn kho</button>
+          <button className={`shop-tab ${activeTab === 'flashsale' ? 'active' : ''}`} onClick={() => setActiveTab('flashsale')}>⚡ Flash Sale</button>
+          <button className={`shop-tab ${activeTab === 'copilot' ? 'active' : ''}`} onClick={() => setActiveTab('copilot')}>🤖 AI Copilot</button>
+          <button className={`shop-tab ${activeTab === 'returns' ? 'active' : ''}`} onClick={() => setActiveTab('returns')}>Đổi trả</button>
+          <button className={`shop-tab ${activeTab === 'tickets' ? 'active' : ''}`} onClick={() => setActiveTab('tickets')}>Hỗ trợ</button>
         </nav>
         <div style={{ marginTop: 40 }}>
           <button onClick={logout} className="btn-secondary btn-sm" style={{ width: '100%' }}>Đăng xuất</button>
@@ -1345,32 +1711,34 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
 
       <div>
         <header>
-          <span>Hệ thống Quản trị Vận hành KTHT E-commerce</span>
-          <Link href="/">Xem Website Cửa hàng →</Link>
+          <strong>V-Pharma · Trung tâm Vận hành Quản trị</strong>
+          <Link href="/">Xem cửa hàng →</Link>
         </header>
         <main>
           {activeTab === 'dashboard' && (
             <div>
-              <h1>Bảng điều hành Tổng quan</h1>
-              <p>Số liệu thời gian thực được tính toán trực tiếp từ cơ sở dữ liệu SQL Server.</p>
+              <div className="admin-page-heading">
+                <div><span className="admin-eyebrow">Tổng quan</span><h1>Hiệu quả vận hành</h1></div>
+                <p>Dữ liệu cập nhật từ hệ thống.</p>
+              </div>
 
               {dashboard.data ? (
                 <>
                   <div className="admin-dashboard-grid">
                     <div className="admin-stat-card">
-                      <span>Doanh thu thực tế</span>
+                      <span>Doanh thu</span>
                       <h3>{money(dashboard.data.totalRevenue)}</h3>
                       <small>Đã trừ đơn hủy</small>
                     </div>
                     <div className="admin-stat-card">
-                      <span>Tổng số đơn</span>
+                      <span>Đơn hàng</span>
                       <h3>{dashboard.data.totalOrders}</h3>
                       <small>{dashboard.data.pendingOrders} đơn chờ xử lý</small>
                     </div>
                     <div className="admin-stat-card">
-                      <span>Sản phẩm niêm yết</span>
+                      <span>Sản phẩm</span>
                       <h3>{dashboard.data.totalProducts}</h3>
-                      <small>Catalog active</small>
+                      <small>Đang niêm yết</small>
                     </div>
                     <div className="admin-stat-card">
                       <span>Cảnh báo tồn kho</span>
@@ -1411,7 +1779,7 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
 
           {activeTab === 'orders' && (
             <div>
-              <h1>Quản lý & Xử lý Đơn hàng</h1>
+              <div className="admin-page-heading"><div><span className="admin-eyebrow">Bán hàng</span><h1>Đơn hàng</h1></div><p>Xử lý theo đúng trạng thái.</p></div>
               <div className="shop-table-wrapper">
                 <table className="shop-table">
                   <thead>
@@ -1421,7 +1789,7 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
                       <th>Tổng tiền</th>
                       <th>Thanh toán</th>
                       <th>Trạng thái</th>
-                      <th>Thao tác nghiệp vụ</th>
+                      <th>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1440,7 +1808,7 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
                           )}
                           {o.status === 'Confirmed' && (
                             <button className="btn-sm shop-primary" onClick={async () => { await postJson(`/admin/orders/${o.id}/fulfill`); orders.retry() }}>
-                              Xuất kho (Fulfill)
+                              Xuất kho
                             </button>
                           )}
                           {o.status === 'Shipped' && (
@@ -1459,8 +1827,7 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
 
           {activeTab === 'inventory' && (
             <div>
-              <h1>Cân đối Tồn kho (P, Q, B, R, A, U)</h1>
-              <p>Công thức: <strong>U = P − Q − B − R − A</strong> (U là tồn khả dụng dùng chung để bán).</p>
+              <div className="admin-page-heading"><div><span className="admin-eyebrow">Kho</span><h1>Tồn kho</h1></div><p><strong>U = P − Q − B − R − A</strong></p></div>
               <div className="shop-table-wrapper">
                 <table className="shop-table">
                   <thead>
@@ -1496,7 +1863,7 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
 
           {activeTab === 'returns' && (
             <div>
-              <h1>Quy trình Đổi trả & Kiểm định QC (RMA)</h1>
+              <div className="admin-page-heading"><div><span className="admin-eyebrow">Hậu mãi</span><h1>Đổi trả</h1></div><p>Tiếp nhận, kiểm định và hoàn tiền.</p></div>
               <div className="shop-table-wrapper">
                 <table className="shop-table">
                   <thead>
@@ -1506,7 +1873,7 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
                       <th>Lý do</th>
                       <th>Số tiền hoàn</th>
                       <th>Trạng thái</th>
-                      <th>Xử lý quy trình</th>
+                      <th>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1522,12 +1889,12 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
                             <button className="btn-sm" onClick={async () => { await postJson(`/admin/returns/${r.id}/approve`); returns.retry() }}>Duyệt yêu cầu</button>
                           )}
                           {r.status === 'Approved' && (
-                            <button className="btn-sm btn-secondary" onClick={async () => { await postJson(`/admin/returns/${r.id}/receive`); returns.retry() }}>Tiếp nhận hàng (P+n, Q+n)</button>
+                            <button className="btn-sm btn-secondary" onClick={async () => { await postJson(`/admin/returns/${r.id}/receive`); returns.retry() }}>Tiếp nhận</button>
                           )}
                           {r.status === 'Received' && (
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button className="btn-sm btn-success" onClick={async () => { await postJson(`/admin/returns/${r.id}/qc`, { isPassed: true }); returns.retry() }}>QC Đạt (Q-n, U+n)</button>
-                              <button className="btn-sm btn-danger" onClick={async () => { await postJson(`/admin/returns/${r.id}/qc`, { isPassed: false }); returns.retry() }}>QC Hỏng</button>
+                              <button className="btn-sm btn-success" onClick={async () => { await postJson(`/admin/returns/${r.id}/qc`, { isPassed: true }); returns.retry() }}>Đạt QC</button>
+                              <button className="btn-sm btn-danger" onClick={async () => { await postJson(`/admin/returns/${r.id}/qc`, { isPassed: false }); returns.retry() }}>Không đạt</button>
                             </div>
                           )}
                           {r.status === 'QC_Completed' && (
@@ -1544,12 +1911,12 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
 
           {activeTab === 'tickets' && (
             <div>
-              <h1>Chăm sóc Khách hàng & Ticket</h1>
+              <div className="admin-page-heading"><div><span className="admin-eyebrow">CSKH</span><h1>Yêu cầu hỗ trợ</h1></div><p>Theo dõi và phân loại yêu cầu.</p></div>
               <div className="shop-table-wrapper">
                 <table className="shop-table">
                   <thead>
                     <tr>
-                      <th>Mã Ticket</th>
+                      <th>Mã yêu cầu</th>
                       <th>Khách hàng</th>
                       <th>Tiêu đề</th>
                       <th>Phân loại</th>
@@ -1574,7 +1941,239 @@ function AdminLivePanel({ user, logout }: { user: User; logout: () => void }) {
             </div>
           )}
 
+          {activeTab === 'flashsale' && <AdminFlashSaleManager />}
+
+          {activeTab === 'copilot' && <AdminCopilotPanel user={user} />}
+
         </main>
+      </div>
+    </div>
+  )
+}
+
+function AdminFlashSaleManager() {
+  const resource = useResource<any[]>('/admin/flash-sales')
+  const [toggling, setToggling] = useState<number | null>(null)
+
+  async function handleToggle(id: number) {
+    setToggling(id)
+    try {
+      await putJson(`/admin/flash-sales/${id}/toggle`)
+      resource.retry()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Không thể thay đổi trạng thái')
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  return (
+    <div>
+      <div className="admin-page-heading">
+        <div>
+          <span className="admin-eyebrow">Khuyến mãi & Sự kiện</span>
+          <h1>Quản lý Flash Sale</h1>
+        </div>
+        <p>Chiến dịch giảm giá giờ vàng với số lượng giới hạn.</p>
+      </div>
+
+      {resource.data ? (
+        <div style={{ display: 'grid', gap: 24 }}>
+          {resource.data.map((fs: any) => (
+            <div key={fs.id} style={{ background: 'white', borderRadius: 14, border: '1px solid var(--shop-border)', padding: 24, boxShadow: '0 4px 14px rgba(15,23,42,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>{fs.name}</h3>
+                  <small style={{ color: '#64748b' }}>
+                    {new Date(fs.startTime).toLocaleString('vi-VN')} → {new Date(fs.endTime).toLocaleString('vi-VN')}
+                  </small>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span className={`shop-badge ${fs.isActive ? 'badge-delivered' : 'badge-cancelled'}`}>
+                    {fs.isActive ? 'ĐANG CHẠY' : 'TẠM DỪNG'}
+                  </span>
+                  <button
+                    className={`btn-sm ${fs.isActive ? 'btn-secondary' : 'btn-success'}`}
+                    disabled={toggling === fs.id}
+                    onClick={() => handleToggle(fs.id)}
+                  >
+                    {fs.isActive ? 'Tạm dừng' : 'Kích hoạt'}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+                <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8 }}>
+                  <small style={{ color: '#64748b' }}>Sản phẩm tham gia</small>
+                  <strong style={{ display: 'block', fontSize: 16 }}>{fs.totalItems} SKU</strong>
+                </div>
+                <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8 }}>
+                  <small style={{ color: '#64748b' }}>Tổng số lượng đã bán</small>
+                  <strong style={{ display: 'block', fontSize: 16, color: '#dc2626' }}>{fs.totalSold} suất</strong>
+                </div>
+                <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8 }}>
+                  <small style={{ color: '#64748b' }}>Doanh thu Flash Sale</small>
+                  <strong style={{ display: 'block', fontSize: 16, color: 'var(--shop-primary)' }}>{money(fs.totalRevenue)}</strong>
+                </div>
+              </div>
+
+              <div className="shop-table-wrapper">
+                <table className="shop-table">
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Tên sản phẩm</th>
+                      <th>Giá gốc</th>
+                      <th>Giá Flash Sale</th>
+                      <th>Giảm</th>
+                      <th>Hạn mức / Đã bán</th>
+                      <th>Tiến độ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fs.items.map((item: any) => {
+                      const percent = Math.min(100, Math.round((item.soldCount * 100) / Math.max(1, item.quantityLimit)))
+                      return (
+                        <tr key={item.id}>
+                          <td><strong>{item.sku}</strong></td>
+                          <td>{item.productName}</td>
+                          <td style={{ textDecoration: 'line-through', color: '#94a3b8' }}>{money(item.originalPrice)}</td>
+                          <td style={{ color: '#dc2626', fontWeight: 700 }}>{money(item.flashSalePrice)}</td>
+                          <td><span className="shop-badge" style={{ background: '#fee2e2', color: '#dc2626' }}>-{item.discountPercentage}%</span></td>
+                          <td>{item.soldCount} / {item.quantityLimit}</td>
+                          <td style={{ minWidth: 100 }}>
+                            <div style={{ height: 8, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+                              <div style={{ width: `${percent}%`, height: '100%', background: '#dc2626' }} />
+                            </div>
+                            <small style={{ color: '#64748b', fontSize: 10 }}>{percent}%</small>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <LoadingState />}
+    </div>
+  )
+}
+
+function AdminCopilotPanel({ user }: { user: User }) {
+  const [messages, setMessages] = useState<Array<{ id: string; sender: 'user' | 'bot'; text: string; time: string; data?: any }>>([
+    {
+      id: 'welcome',
+      sender: 'bot',
+      text: `Xin chào ${user.fullName} (${user.role})! Tôi là V-Pharma Admin Copilot.\nBạn có thể hỏi tôi về:\n- Báo cáo tồn kho (P, Q, B, R, A, U)\n- Doanh thu và hiệu suất bán hàng\n- Tình hình chiến dịch Flash Sale`,
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    }
+  ])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  async function handleSend(textToSend?: string) {
+    const text = (textToSend ?? input).trim()
+    if (!text || loading) return
+
+    const userMsg = {
+      id: `u-${Date.now()}`,
+      sender: 'user' as const,
+      text,
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    }
+    setMessages(prev => [...prev, userMsg])
+    setInput('')
+    setLoading(true)
+
+    try {
+      const res = await postJson<{ reply: string; data?: any }>('/chat/admin', { message: text })
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `b-${Date.now()}`,
+          sender: 'bot',
+          text: res.reply,
+          time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          data: res.data
+        }
+      ])
+    } catch (err) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          sender: 'bot',
+          text: err instanceof Error ? err.message : 'Không thể kết nối đến máy chủ trợ lý.',
+          time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+        }
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="admin-page-heading">
+        <div>
+          <span className="admin-eyebrow">Trợ lý Quản trị</span>
+          <h1>V-Pharma AI Copilot</h1>
+        </div>
+        <p>Hỏi đáp số liệu vận hành, tồn kho và đơn hàng theo thời gian thực.</p>
+      </div>
+
+      <div className="admin-copilot-card">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          <button className="chat-chip" onClick={() => handleSend('Báo cáo tồn kho')}>📊 Báo cáo tồn kho</button>
+          <button className="chat-chip" onClick={() => handleSend('Doanh thu và đơn hàng')}>📈 Báo cáo doanh thu & đơn hàng</button>
+          <button className="chat-chip" onClick={() => handleSend('Flash sale')}>⚡ Kiểm tra Flash Sale</button>
+        </div>
+
+        <div style={{ minHeight: 320, maxHeight: 480, overflowY: 'auto', background: '#f8fafc', borderRadius: 12, padding: 18, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {messages.map(m => (
+            <div key={m.id} style={{ alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+              <div style={{
+                background: m.sender === 'user' ? 'var(--shop-primary)' : 'white',
+                color: m.sender === 'user' ? 'white' : '#1e293b',
+                padding: '12px 16px',
+                borderRadius: 12,
+                border: m.sender === 'bot' ? '1px solid #e2e8f0' : 'none',
+                whiteSpace: 'pre-line',
+                boxShadow: '0 2px 6px rgba(15,23,42,0.04)',
+                fontSize: 14,
+                lineHeight: 1.5
+              }}>
+                {m.text}
+              </div>
+              <small style={{ display: 'block', color: '#94a3b8', fontSize: 10, marginTop: 4, textAlign: m.sender === 'user' ? 'right' : 'left' }}>{m.time}</small>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ alignSelf: 'flex-start', background: 'white', padding: '10px 14px', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+              <small style={{ color: '#64748b' }}>Đang truy vấn số liệu máy chủ…</small>
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        <form onSubmit={e => { e.preventDefault(); handleSend() }} style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Hỏi về tồn kho, đơn hàng, flash sale..."
+            style={{ height: 44, borderRadius: 8, flex: 1, border: '1.5px solid #cbd5e1', paddingInline: 14 }}
+          />
+          <button type="submit" className="shop-primary" disabled={loading || !input.trim()} style={{ height: 44, borderRadius: 8, paddingInline: 20 }}>
+            Gửi câu hỏi
+          </button>
+        </form>
       </div>
     </div>
   )

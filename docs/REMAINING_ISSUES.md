@@ -28,3 +28,13 @@ Tài liệu này ghi nhận các vấn đề nghiệp vụ, chính sách kỹ th
 | **ISSUE-02** | Đơn vị vận chuyển thực tế (GHTK / GHN) | Không có webhook trạng thái thật | Mô phỏng qua Admin Fulfillment | Warehouse xác nhận xuất kho và chuyển trạng thái giao hàng trong màn hình Admin. |
 | **ISSUE-03** | API sàn TMĐT (Shopee / Lazada) | Không có kết nối sandbox trực tiếp | Mock Adapter | Cung cấp màn hình Simulator (A27) để phát sự kiện đơn sàn nhằm kiểm chứng chuyển động $A \to R$. |
 
+# Các việc còn lại — bản tóm tắt
+
+- Hoàn thiện kiểm tra quyền sở hữu cho mọi tài nguyên khách hàng và quyền theo hành động ở admin.
+- Bổ sung integration test SQL Server cho tranh tồn, retry idempotency và giới hạn dùng mã khuyến mãi.
+- Tách các tab admin thành đúng route trong sitemap; chưa coi toàn bộ 27 trang admin là hoàn thành.
+- Thanh toán và vận chuyển vẫn là mô phỏng local.
+- Không còn tích hợp hay nhận đơn từ Shopee, Lazada, TikTok hoặc sàn khác.
+
+Nội dung cũ bên dưới là lịch sử quyết định. Mục đa kênh cũ không còn áp dụng.
+

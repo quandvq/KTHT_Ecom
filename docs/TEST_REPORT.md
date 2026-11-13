@@ -179,3 +179,19 @@ Hệ thống KTHT E-commerce đã đạt toàn bộ các tiêu chí nghiệm thu
 3. **Quy trình đổi trả và kiểm định thực tế:** Hàng hoàn được đưa vào khu vực cách ly $Q$, chỉ khi nhân viên QC kiểm định đạt chuẩn mới được nhập lại tồn bán $U$.
 4. **Số liệu Dashboard 100% là dữ liệu thực:** Không mock, không hardcode; phản ánh đúng trạng thái thực của các đơn hàng và tồn kho trong SQL Server.
 
+# Cập nhật kiểm tra giao diện — 2026-11-04
+
+Phạm vi lần này là responsive và bố cục chung. Kết quả đã chạy:
+
+| Kiểm tra | Kết quả |
+| --- | --- |
+| ESLint | Đạt |
+| TypeScript | Đạt |
+| Vitest | 14/14 đạt |
+| Build FE | Đạt |
+| Build BE | Đạt, 0 warning/error |
+| Kiểm tra nghiệp vụ BE | 23/23 đạt |
+| Chrome: 1440, 768, 375 px | Đạt, không tràn ngang |
+
+Script responsive: `tests/e2e/responsive-shell.mjs`. Báo cáo cũ bên dưới chỉ là lịch sử; không dùng số liệu cũ để kết luận cho phiên bản hiện tại.
+

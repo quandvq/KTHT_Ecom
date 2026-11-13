@@ -103,7 +103,7 @@ describe('Catalog storefront', () => {
   })
   it('admin shell contains no fabricated KPI or active admin links', () => {
     const fetcher = setup('/admin')
-    expect(screen.getByRole('heading', { name: 'Khu vực quản trị' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Đăng nhập để tiếp tục' })).toBeInTheDocument()
     expect(screen.getAllByRole('link').every(link => link.getAttribute('href') === '/')).toBe(true)
     expect(fetcher.mock.calls.every(([url]) => !url.includes('/admin'))).toBe(true)
     expect(screen.queryByText(/đa kênh|sàn thương mại|shopee|lazada|tiktok/i)).not.toBeInTheDocument()

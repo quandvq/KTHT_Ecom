@@ -111,3 +111,12 @@ Tuân thủ nghiêm ngặt theo [`AGENTS.md`](../AGENTS.md):
    - Chạy regression test: Catalog checks, API test suite, E2E headless verification.
    - Cập nhật toàn bộ tài liệu nghiệm thu.
 
+# Kế hoạch ngắn gọn hiện tại
+
+1. Giữ ổn định luồng catalog → giỏ → checkout → reservation → xử lý đơn.
+2. Hoàn thiện route và quyền cho từng màn hình trước khi chuyển từ `PLANNED` sang `IMPLEMENTED`.
+3. Kiểm thử SQL Server riêng cho đồng thời, idempotency, hoàn tồn và khuyến mãi.
+4. Sau đó mới mở rộng hậu mãi, báo cáo và các trang quản trị còn thiếu.
+
+Hệ thống hiện chỉ bán trực tiếp trên website. Các phần đa kênh trong kế hoạch lịch sử bên dưới không còn thuộc build hiện tại.
+

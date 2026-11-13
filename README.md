@@ -1,179 +1,79 @@
-# KTHT E-commerce — Demo hệ thống quản lý hoạt động đa kênh
+# V-Pharma E-commerce
 
-## 1. Mục tiêu và trạng thái
+Nền tảng thương mại điện tử dược phẩm trực tuyến **V-Pharma** chạy cục bộ với React, ASP.NET Core và SQL Server. Hệ thống nhận đơn trực tiếp từ website, kiểm tra giá và bảo toàn nguyên tử tồn kho theo invariant $U = P - Q - B - R - A \ge 0$.
 
-Dự án môn Kiến trúc hệ thống UEH: hiện thực hóa quy trình E-commerce bằng website có Front-end, Back-end và SQL Server cục bộ. Mục tiêu là chứng minh luồng nghiệp vụ, tính nhất quán dữ liệu và sự phối hợp giữa bán hàng, kho, giao vận, CSKH.
+## Tính năng nổi bật
 
-**Trạng thái hiện tại:** đã khởi tạo tài liệu M0 tạm thời và bộ khung M1 cho danh mục sản phẩm. M0 chưa được xác nhận theo nguồn KTHT; M1 chưa hoàn tất đăng nhập, phân quyền và kiểm thử tích hợp FE–BE–SQL Server. Theo dõi chi tiết tại [backlog](docs/backlog.md) và [TASK-002](docs/tasks/TASK-002.md). Các file `.gitkeep` chỉ giữ thư mục trong Git.
+- **Nhận diện thương hiệu V-Pharma**: Hệ thống nhà thuốc trực tuyến chuẩn GPP với giao diện hiện đại, hotline 1800 6828, chính sách giao hàng 2h và đổi trả trong 30 ngày.
+- **Trợ lý Dược sĩ V-Pharma (Customer Chatbot)**: Hỗ trợ khách hàng tìm kiếm thuốc & vitamin từ dữ liệu thật, tra cứu trạng thái đơn hàng theo mã `ORD-...`, tư vấn chính sách giao nhận và cảnh báo y tế chuẩn mực.
+- **V-Pharma AI Copilot (Admin Chatbot)**: Hỗ trợ nhân viên và quản trị viên tra cứu số liệu tồn kho theo thời gian thực ($P, Q, B, R, A, U$), báo cáo doanh thu, đơn hàng và tình hình khuyến mãi.
+- **Flash Sale Giờ Vàng**: Chiến dịch giảm giá có thời hạn với đồng hồ đếm ngược trực tiếp, hạn mức bán giới hạn, trừ tồn theo thời gian thực và tự động áp dụng giá ưu đãi tại giỏ hàng & thanh toán.
+- **Khuyến mãi & Voucher**: Mỗi đơn áp dụng tối đa 1 mã giảm giá; hệ thống seed sẵn 50 mã demo (`SALE10-xx`, `GIAM20K-xx`, `GIAM50K-xx`, `VIP15-xx`).
+- **Tối ưu hóa UI/UX**:
+  - Popup đăng nhập hiện đại với backdrop blur, căn giữa, trường nhập 44px đồng đều.
+  - Trang Checkout bố cục 2 cột chuyên nghiệp trên desktop (Form thông tin giao nhận bên trái, Tóm tắt đơn hàng & Voucher bên phải), co giãn 1 cột trên mobile.
+  - Thẻ sản phẩm chuẩn hóa chiều cao, giới hạn tiêu đề 2 dòng đồng đều.
+  - Chân trang 4 nhóm đầy đủ thông tin pháp lý, giấy phép kinh doanh dược, hotline và địa chỉ trụ sở.
+- **Dữ liệu**: SQL Server LocalDB mặc định, EF Core migration và seed lặp không nhân đôi dữ liệu.
 
-Tài liệu KTHT/ERD/BPMN đầy đủ chưa được đính kèm vào repository tại thời điểm soạn. Nhóm đặt bản đã chốt vào `docs/source/`; mọi khác biệt với đề xuất này phải được ghi nhận trước khi sửa thiết kế. Không suy đoán rằng tên bảng dự kiến đã trùng ERD cuối cùng.
+## Công nghệ
 
-## 2. Công nghệ và kiến trúc mục tiêu
-
-| Thành phần | Lựa chọn |
+| Thành phần | Công nghệ |
 | --- | --- |
-| Front-end | React + TypeScript + Vite + Bootstrap |
-| Back-end | ASP.NET Core Web API, C#; modular monolith |
-| Dữ liệu | SQL Server Express/Developer cục bộ; Entity Framework Core |
-| Công cụ | VS Code + Codex, SSMS, Git, OpenAPI |
-| Kiểm thử | xUnit cho BE; Vitest/Testing Library cho FE; Playwright cho luồng E2E |
+| Front-end | React 18, TypeScript, Vite, CSS Responsive |
+| Back-end | ASP.NET Core Web API, Entity Framework Core |
+| Cơ sở dữ liệu | SQL Server LocalDB / Developer |
+| Kiểm thử | Vitest (14 bài test FE), Bộ kiểm tra nghiệp vụ .NET (23 bài checks), E2E test scripts |
 
-Pin phiên bản SDK và dependency phù hợp môi trường bằng `global.json`, lockfile và tool manifest trong bước bootstrap. Không nâng cấp tùy ý giữa các task.
+Phiên bản .NET được pin trong `global.json`; dependency JavaScript được khóa trong `frontend/package-lock.json`.
 
-Luồng: trình duyệt → HTTP API → dịch vụ nghiệp vụ → SQL Server. FE không kết nối DB trực tiếp. Một BE chia module; chưa cần microservices, message broker hoặc AI agents trong MVP. Các vai trò Codex trong AGENTS.md là đội phát triển, khác với AI agents chạy trong sản phẩm.
-
-- Website khách hàng: xem sản phẩm, đặt hàng, theo dõi đơn, gửi hỗ trợ.
-- Back-office: sản phẩm, đơn hàng, kho, kênh bán, giao vận, hậu mãi, báo cáo.
-- Adapter mô phỏng: sàn, thanh toán, giao vận; gắn nhãn mô phỏng rõ ràng.
-- DB chỉ cho BE và công cụ quản trị được phép truy cập; không công khai cổng SQL để chạy demo.
-
-## 3. Phạm vi theo mốc
-
-| Mốc | Nội dung | Tiêu chí nghiệm thu |
-| --- | --- | --- |
-| M0 | Đọc nguồn, chốt use case, ERD, phân quyền, trạng thái, API | Có giả định, quyết định và tiêu chí kiểm thử truy vết được |
-| M1 | Bootstrap FE/BE/DB, đăng nhập, migration, seed | Chạy cục bộ, FE đọc dữ liệu thật qua API, quyền được kiểm tra tại BE |
-| M2 | Sản phẩm/SKU, giỏ hàng, đơn, giữ hàng | Đặt đơn và giữ hàng nguyên tử; không bán vượt tồn khi đồng thời |
-| M3 | Xác nhận, xuất kho, giao hàng mô phỏng, hủy | Luồng hoàn tất/hủy có lịch sử; không xuất hay hoàn tồn trùng |
-| M4 | Hạn mức kênh, nhận đơn sàn, retry và đối soát | Không tạo đơn trùng; đơn trễ không làm tăng cam kết tồn |
-| M5 | CSKH, đổi trả, bảo hành | Phê duyệt và kiểm tra hàng trước nhập lại; giới hạn số lượng/tiền |
-| M6 | Dashboard, E2E, đóng gói | Cài mới được, demo lặp lại được, báo cáo khớp dữ liệu nguồn |
-
-Ưu tiên hoàn tất M1–M3 trước khi mở rộng. Thanh toán/giao vận thật, AI agents, nhiều doanh nghiệp, tối ưu phân bổ kho và triển khai public là phạm vi sau MVP.
-
-## 4. Vai trò người dùng
-
-| Vai trò ứng dụng | Quyền chính |
-| --- | --- |
-| Customer | Xem/sửa dữ liệu được phép của bản thân, đặt và theo dõi đơn của mình |
-| Sales | Tiếp nhận và xử lý đơn theo trạng thái cho phép |
-| Warehouse | Nhập, giữ/soạn/xuất hàng theo nghiệp vụ và kiểm hàng trả |
-| CustomerService | Xử lý ticket, tiếp nhận hậu mãi |
-| Manager | Báo cáo, phê duyệt ngoại lệ theo ma trận quyền |
-| Admin | Tài khoản, vai trò và cấu hình |
-
-Phải có ma trận quyền ở cấp hành động và đối tượng. Ẩn nút trên FE không thay thế kiểm tra quyền ở BE.
-
-## 5. Quy tắc nghiệp vụ cốt lõi
-
-Các quy tắc dưới đây là baseline thiết kế cần đối chiếu nguồn KTHT.
-
-- Mọi tồn kho được định danh theo SKU và kho; không dùng tổng tồn sản phẩm thay cho biến thể.
-- Đặt hàng phải kiểm tra giá, trạng thái SKU, số lượng và khả dụng ở BE; không tin tổng tiền FE gửi.
-- Tạo đơn và giữ hàng cùng transaction; lỗi một dòng làm rollback toàn bộ đơn trong MVP.
-- Giữ hàng không giảm tồn vật lý. Xuất hàng giảm tồn vật lý và tất toán giữ hàng đúng một lần. Hủy trước xuất giải phóng giữ hàng; hủy sau xuất phải qua quy trình giao thất bại/hoàn hàng.
-- Tồn không bán được và tồn an toàn không được đưa vào lượng có thể cam kết.
-- Phân bổ cho kênh khác giữ hàng theo đơn; hạn mức sàn vẫn được bảo vệ khi đơn chưa về.
-- Nhận đơn sàn chuyển cam kết từ hạn mức sang reservation, không cộng hai lần. Đơn vượt hạn mức vào ngoại lệ, không âm tồn hoặc tự tăng hạn mức.
-- Trước khi đẩy số lượng tuyệt đối/tăng hạn mức phải đối soát các đơn và sự kiện liên quan. Chưa xác định được trạng thái mới nhất thì không tăng.
-- Chuyển hạn mức phải xác nhận giảm ở kênh cũ trước khi tăng kênh mới; timeout giữ phần đang chuyển ở trạng thái được bảo vệ.
-- Order, Payment, Shipment và Return có vòng đời riêng; sự kiện giao hàng không tự chứng minh đã thu tiền.
-- Không nhập lại tồn bán được chỉ vì khách tạo yêu cầu trả hàng; phải nhận và kiểm tra hàng.
-- Mọi nghiệp vụ có thể nhận lại phải có idempotency key/unique constraint và cơ chế xử lý đồng thời.
-- Tiền dùng decimal tại BE/DB; thời gian lưu UTC, hiển thị múi giờ Việt Nam; mọi chuyển trạng thái có người thực hiện, thời gian và lý do khi cần.
-
-## 6. Cấu trúc repository mục tiêu
-
-| Đường dẫn | Nội dung |
-| --- | --- |
-| `README.md`, `AGENTS.md` | Hướng dẫn dự án và quy tắc làm việc của Codex |
-| `frontend/` | React, các feature, API client, component dùng chung |
-| `backend/Ktht.sln` | Solution BE |
-| `backend/src/Ktht.Api/` | HTTP endpoints, auth, composition root |
-| `backend/src/Ktht.Application/` | Use case, DTO, orchestration |
-| `backend/src/Ktht.Domain/` | Entity, state machine, quy tắc nghiệp vụ |
-| `backend/src/Ktht.Infrastructure/` | EF Core, migration, adapter, outbox/inbox nếu cần |
-| `backend/tests/` | Unit test và integration test |
-| `tests/e2e/` | Các hành trình người dùng xuyên FE–BE–DB |
-| `docs/source/` | Báo cáo, ERD, BPMN do nhóm cung cấp |
-| `docs/architecture/`, `docs/adr/` | Thiết kế và quyết định kiến trúc |
-| `docs/business-rules.md` | Quy tắc BR-xxx, nguồn và trạng thái xác nhận |
-| `docs/api/`, `docs/data/` | API contract, từ điển dữ liệu và schema |
-| `docs/tasks/`, `docs/reviews/` | Task, bàn giao, finding và bằng chứng xác minh |
-| `docs/traceability.md` | Quy trình → màn hình → API → bảng → test |
-| `docs/demo.md` | Tài khoản mẫu, kịch bản và kết quả mong đợi |
-| `scripts/` | Setup/check/seed; reset chỉ chạy khi người dùng yêu cầu |
-
-## 7. Khởi tạo bằng Codex trong VS Code
-
-1. Tạo thư mục repository, đặt README.md và AGENTS.md ở thư mục gốc, mở cả thư mục bằng VS Code.
-2. Đưa tài liệu KTHT đã chốt vào `docs/source/` nếu có.
-3. Yêu cầu Codex đọc hai file và thực hiện M0; nếu thiếu nguồn, ghi giả định tạm và chỉ tiếp tục phần không bị ảnh hưởng.
-4. Sau M0, giao M1 rồi từng vertical slice; mỗi task có người thực hiện và vai trò rà soát.
-5. Duy trì task/review trong repo để tiếp tục được giữa các phiên làm việc.
-
-Prompt khởi động gợi ý:
-
-> Đọc README.md, AGENTS.md và docs/source nếu tồn tại. Đóng vai Coordinator, kiểm kê repository, tạo backlog M0–M6 với dependency, owner và reviewer. Thực hiện M0 rồi bootstrap M1 trong phạm vi các giả định đã rõ. Không xây toàn bộ hệ thống trong một lượt. Nếu hỗ trợ sub-agent, phân công các phần độc lập và kiểm tra chéo; nếu không, làm tuần tự theo vai trò và ghi rõ đây là self-review. Báo cáo file thay đổi, lệnh đã chạy, kết quả và blocker.
-
-## 8. Chạy cục bộ sau khi bootstrap
-
-Cần có Node.js, .NET SDK đúng phiên bản đã pin, SQL Server đang chạy, SSMS tùy chọn và Git. M1 chưa hoàn tất. Node.js/npm và lockfile frontend đã có trong môi trường kiểm kê; nếu terminal cũ chưa nhận PATH mới, mở terminal mới hoặc dùng đường dẫn Node.js đã cài. `frontend/package-lock.json` là lockfile cần dùng với `npm ci`. Kết quả thực tế của slice hiện có được ghi ở TASK-007, không suy diễn rằng toàn bộ M1 đã đạt.
-
-Cấu hình dự kiến:
-
-- FE: `http://localhost:5173`; BE: `http://localhost:5080` cho demo local.
-- FE `.env.local`: `VITE_API_BASE_URL=http://localhost:5080/api` (không chứa bí mật).
-- BE: `ConnectionStrings__DefaultConnection` qua biến môi trường hoặc .NET user-secrets.
-- Ví dụ cấu hình dev: `Server=localhost;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True`.
-- Đổi instance theo máy; không xem chuỗi trên là thông tin kết nối đã xác minh. TrustServerCertificate chỉ là lựa chọn dev cục bộ.
-- CORS chỉ cho origin FE đã cấu hình; cơ chế cookie/token và chống CSRF được chốt trong ADR xác thực.
-
-Lệnh PowerShell chuẩn bị BE từ root (đảm bảo SQL Server đang chạy):
+## Chạy nhanh trên Windows
 
 ```powershell
-$env:ConnectionStrings__DefaultConnection = "Server=localhost;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True"
+$env:ConnectionStrings__DefaultConnection = "Server=(localdb)\mssqllocaldb;Database=KTHT_Ecom_Dev;Trusted_Connection=True;TrustServerCertificate=True"
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 
-# Nạp dữ liệu giả demo (idempotent, không nhân đôi khi chạy lại)
+dotnet tool restore
+dotnet ef database update --project backend/src/Ktht.Infrastructure --startup-project backend/src/Ktht.Api
+dotnet run --project backend/src/Ktht.Api -- --import-pharmacity
 dotnet run --project backend/src/Ktht.Api -- --seed-demo
-
-# Khởi chạy Back-end API
 dotnet run --project backend/src/Ktht.Api --urls http://localhost:5080
 ```
 
-Terminal khác (Front-end):
+Mở terminal khác:
 
 ```powershell
-# Bổ sung PATH nếu PowerShell chưa nhận Node.js
-$env:PATH = "C:\Program Files\nodejs;$env:PATH"
-
-cd frontend
-npm.cmd ci
-npm.cmd run dev -- --host localhost --port 5173
+npm.cmd --prefix frontend ci
+npm.cmd --prefix frontend run dev -- --host localhost --port 5173
 ```
 
-Nếu PowerShell chặn npm.ps1 do ExecutionPolicy, dùng `npm.cmd` tương ứng. Mở trình duyệt tại `http://localhost:5173` để xem C01 Trang chủ, `/products` cho C02 Danh mục, `/products/:slug` cho C03 Chi tiết hoặc `/admin` cho khung Admin shell.
-
-## 9. Kiểm thử và Definition of Done
-
-Các lệnh kiểm thử thực tế đã được kiểm chứng (M1 Catalog C01–C03):
+Truy cập `http://localhost:5173`. Nếu terminal chưa nhận Node.js:
 
 ```powershell
-# 1. Build Back-end
-dotnet build backend/Ktht.sln --no-restore
-
-# 2. Kiểm tra nghiệp vụ & validation Catalog Back-end (16/16 PASS)
-dotnet run --project backend/tests/Ktht.Catalog.Checks
-
-# 3. Kiểm tra Front-end (Lint, Typecheck, Unit Test 11/11, Build)
 $env:PATH = "C:\Program Files\nodejs;$env:PATH"
+```
+
+Xem hướng dẫn đầy đủ hơn tại `USER_GUIDE.md`.
+
+## Kiểm tra
+
+```powershell
+dotnet build backend/Ktht.sln --no-restore
+dotnet run --project backend/tests/Ktht.Catalog.Checks
 npm.cmd --prefix frontend run lint
 npm.cmd --prefix frontend run typecheck
 npm.cmd --prefix frontend run test -- --run
 npm.cmd --prefix frontend run build
-
-# 4. Kiểm thử tích hợp E2E API với SQL Server thật (61 requests PASS)
-node tests/e2e/catalog-api.mjs http://127.0.0.1:5080
-
-# 5. Kiểm thử E2E trực quan và responsive bằng Chrome headless (14 checks PASS, 0 overflow)
-node tests/e2e/catalog-browser.mjs http://127.0.0.1:5173 9222 tests/e2e/artifacts
 ```
 
-Một chức năng chỉ Done khi: FE dùng API thật; quyền và logic nằm ở BE; dữ liệu/rollback đúng; test tiêu chí chấp nhận đạt; review không còn lỗi nghiêm trọng; tài liệu và truy vết cập nhật. Nếu chưa chạy được do môi trường, ghi BLOCKED/NOT RUN, không báo pass.
+E2E có thay đổi dữ liệu phải dùng database test riêng. Kết quả gần nhất nằm trong `docs/TEST_REPORT.md`; không suy rộng kết quả cũ cho code mới.
 
-Demo tối thiểu: đặt đơn hợp lệ; hai đơn tranh lượng hàng cuối; hủy trước xuất; webhook trùng; đơn sàn trễ; mất kết nối khi chuyển hạn mức; nhận và kiểm tra hàng trả; truy cập đơn người khác bị từ chối.
+## Tài liệu chính
 
-## 10. Cách làm việc và giới hạn
+- `AGENTS.md`: quy tắc làm việc và điều kiện nghiệm thu.
+- `docs/ui/page-inventory.md`: trạng thái 40 màn hình.
+- `docs/architecture/inventory-model.md`: mô hình tồn kho.
+- `docs/business-rules.md`: quy tắc nghiệp vụ.
+- `docs/tasks/` và `docs/reviews/`: phạm vi, bàn giao và finding.
 
-AGENTS.md quy định vai trò, bàn giao, rà soát và điều kiện đóng task. File này không tự tạo các tiến trình agent; khả năng chạy song song phụ thuộc môi trường Codex. Không cần cài hệ thống multi-agent bên trong website để sử dụng cách làm việc này.
+Nguồn KTHT chính thức cần đặt trong `docs/source/`. Thư mục này chưa có nguồn ngoài `.gitkeep`, nên các quyết định chưa có nguồn vẫn là giả định của bản demo.

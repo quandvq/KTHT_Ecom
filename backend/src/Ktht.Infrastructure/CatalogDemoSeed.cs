@@ -10,55 +10,10 @@ public static class CatalogDemoSeed
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
-        // 1. Categories & Demo Fixtures (for E2E tests and catalog assertions)
-        var definitions = new[] { ("cham-soc-ca-nhan", "Chăm sóc cá nhân"), ("cham-soc-gia-dinh", "Chăm sóc gia đình"), ("phu-kien-suc-khoe", "Phụ kiện sức khỏe") };
-        var categories = new List<Category>();
-        foreach (var (slug, name) in definitions)
-        {
-            var category = await db.Categories.SingleOrDefaultAsync(c => c.Slug == slug);
-            if (category is null)
-            {
-                category = new Category { Slug = slug, Name = name };
-                db.Categories.Add(category);
-                await db.SaveChangesAsync();
-            }
-            categories.Add(category);
-        }
+        // Catalog products are imported separately so seed reruns never recreate products
+        // that operators intentionally removed (for example records without images).
 
-        string[] names = ["Khăn bông mềm", "Bàn chải mềm", "Lược gỗ", "Túi đựng cá nhân", "Gương cầm tay", "Hộp đựng tiện dụng", "Khăn lau gia đình", "Bình nước", "Túi giữ nhiệt", "Hộp chia ngăn", "Thảm tập", "Dây tập co giãn", "Túi thể thao", "Gối kê cổ", "Băng đô thể thao"];
-        for (var i = 0; i < names.Length; i++)
-        {
-            var slug = $"demo-san-pham-{i + 1:00}";
-            var sku = $"KTHT-DEMO-{i + 1:00}";
-            if (await db.Products.AnyAsync(p => p.Slug == slug || p.Sku == sku) ||
-                await db.ProductVariants.AnyAsync(v => v.Sku == sku + "-S" || v.Sku == sku + "-L" || v.Sku == sku + "-INACTIVE")) continue;
-            var price = 25000m + i * 15000m;
-            db.Products.Add(new Product
-            {
-                Name = names[i], Slug = slug, Sku = sku, Price = price, CategoryId = categories[i / 5].Id,
-                Description = $"{names[i]} — dữ liệu demo KTHT.",
-                IsPublished = true, IsFeatured = i % 3 == 0,
-                Variants =
-                [
-                    new ProductVariant { Sku = sku + "-S", Name = "Tiêu chuẩn", Price = price, IsActive = true },
-                    new ProductVariant { Sku = sku + "-L", Name = "Cỡ lớn", Price = price + 20000m, IsActive = true },
-                    new ProductVariant { Sku = sku + "-INACTIVE", Name = "Ngừng niêm yết (demo)", Price = 1m, IsActive = false }
-                ]
-            });
-        }
-        foreach (var slug in new[] { "demo-unpublished", "demo-no-active-sku" })
-        {
-            if (await db.Products.AnyAsync(p => p.Slug == slug || p.Sku == slug) || await db.ProductVariants.AnyAsync(v => v.Sku == slug)) continue;
-            db.Products.Add(new Product
-            {
-                Name = "Dữ liệu kiểm thử ẩn", Slug = slug, Sku = slug, Price = 1m,
-                CategoryId = categories[0].Id, IsPublished = slug != "demo-unpublished",
-                Variants = [new ProductVariant { Sku = slug, Name = "Kiểm thử", Price = 1m, IsActive = slug == "demo-unpublished" }]
-            });
-        }
-        await db.SaveChangesAsync();
-
-        // 2. Seed Users.
+        // 1. Seed users.
         var demoUsers = new (string Email, string Name, string Role, string Phone)[]
         {
             ("admin@ktht.local", "Quản trị viên Hệ thống", "Admin", "0901234567"),
@@ -150,6 +105,52 @@ public static class CatalogDemoSeed
             }
         }
         await db.SaveChangesAsync();
+
+        // 4. Seed Demo Flash Sale if none exists
+        if (!await db.FlashSales.AnyAsync())
+        {
+            var flashSaleVariants = await db.ProductVariants
+                .Include(v => v.Product)
+                .Where(v => v.IsActive && v.Product.IsPublished && !string.IsNullOrEmpty(v.Product.ImageUrl) && v.Price > 10000m)
+                .OrderBy(v => v.Id)
+                .Take(6)
+                .ToListAsync();
+
+            if (flashSaleVariants.Count > 0)
+            {
+                var flashSale = new FlashSale
+                {
+                    Name = "Flash Sale Giờ Vàng Dược Phẩm",
+                    Description = "Săn deal giảm giá sốc đến 40% cho các sản phẩm chăm sóc sức khỏe chính hãng tại V-Pharma",
+                    StartTime = DateTime.UtcNow.AddMinutes(-30),
+                    EndTime = DateTime.UtcNow.AddHours(24),
+                    IsActive = true
+                };
+                db.FlashSales.Add(flashSale);
+                await db.SaveChangesAsync();
+
+                foreach (var v in flashSaleVariants)
+                {
+                    var discountRate = 0.25m; // 25% off
+                    var fsPrice = Math.Round(v.Price * (1m - discountRate) / 1000m, 0) * 1000m;
+                    if (fsPrice >= v.Price) fsPrice = v.Price - 1000m;
+                    if (fsPrice <= 0) fsPrice = Math.Max(1000m, v.Price - 1000m);
+
+                    db.FlashSaleItems.Add(new FlashSaleItem
+                    {
+                        FlashSaleId = flashSale.Id,
+                        ProductId = v.ProductId,
+                        VariantId = v.Id,
+                        Sku = v.Sku,
+                        OriginalPrice = v.Price,
+                        FlashSalePrice = fsPrice,
+                        QuantityLimit = 50,
+                        SoldCount = 14
+                    });
+                }
+                await db.SaveChangesAsync();
+            }
+        }
 
         await transaction.CommitAsync();
     }

@@ -49,3 +49,14 @@ Phân hệ quản trị được tích hợp trong giao diện điều hành t�
 | :--- | :--- | :--- |
 | `*` (404) | Trang báo lỗi 404 kỹ thuật khi truy cập đường dẫn không tồn tại hoặc SKU/sản phẩm không có thực | **VERIFIED** (Kiểm thử tự động qua `App.test.tsx`) |
 | `/admin` (Guest) | Khung bảo vệ khi khách vãng lai hoặc tài khoản `Customer` truy cập vùng quản trị; hiển thị hướng dẫn đăng nhập tài khoản nhân viên | **VERIFIED** (Kiểm thử tự động qua `App.test.tsx` và `full-flow-test.mjs`) |
+# Lưu ý trạng thái hiện tại
+
+Bảng cũ bên dưới là danh mục tham chiếu, không phải bằng chứng rằng 40 màn hình đã hoàn tất. Kiểm kê code hiện tại:
+
+- `VERIFIED`: C01, C02, C03.
+- `IMPLEMENTED`: C04–C08, C10, C11.
+- `IN_PROGRESS`: C09, C12 và các module quản trị đang dùng tab trong `/admin` nhưng chưa có đủ route riêng.
+- `PLANNED`: các màn hình còn lại, gồm C13 và các route quản trị chưa tồn tại đúng sitemap.
+- A13, A14 và A27 vẫn được giữ trong sitemap đã chốt nhưng không có chức năng sàn đa kênh trong build hiện tại.
+
+Chỉ nâng trạng thái khi có route, API, quyền và kiểm thử phù hợp. Nội dung `VERIFIED` cũ bên trên cần được chuẩn hóa dần theo nguyên tắc này.

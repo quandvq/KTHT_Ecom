@@ -121,6 +121,92 @@ namespace Ktht.Infrastructure.Migrations
                     b.ToTable("CustomerAddresses");
                 });
 
+            modelBuilder.Entity("Ktht.Domain.FlashSale", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FlashSales");
+                });
+
+            modelBuilder.Entity("Ktht.Domain.FlashSaleItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("FlashSaleId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("FlashSalePrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("OriginalPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuantityLimit")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Sku")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("SoldCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FlashSaleId");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("VariantId");
+
+                    b.ToTable("FlashSaleItems", t =>
+                        {
+                            t.HasCheckConstraint("CK_FlashSaleItems_Price", "[FlashSalePrice] > 0 AND [FlashSalePrice] < [OriginalPrice]");
+
+                            t.HasCheckConstraint("CK_FlashSaleItems_Quantity", "[QuantityLimit] > 0 AND [SoldCount] >= 0 AND [SoldCount] <= [QuantityLimit]");
+                        });
+                });
+
             modelBuilder.Entity("Ktht.Domain.InventoryBalance", b =>
                 {
                     b.Property<int>("Id")
@@ -891,6 +977,33 @@ namespace Ktht.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Ktht.Domain.FlashSaleItem", b =>
+                {
+                    b.HasOne("Ktht.Domain.FlashSale", "FlashSale")
+                        .WithMany("Items")
+                        .HasForeignKey("FlashSaleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Ktht.Domain.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ktht.Domain.ProductVariant", "Variant")
+                        .WithMany()
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FlashSale");
+
+                    b.Navigation("Product");
+
+                    b.Navigation("Variant");
+                });
+
             modelBuilder.Entity("Ktht.Domain.InventoryReservation", b =>
                 {
                     b.HasOne("Ktht.Domain.Order", "Order")
@@ -1015,6 +1128,11 @@ namespace Ktht.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Ticket");
+                });
+
+            modelBuilder.Entity("Ktht.Domain.FlashSale", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Ktht.Domain.Order", b =>

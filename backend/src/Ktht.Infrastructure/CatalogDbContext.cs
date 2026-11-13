@@ -19,6 +19,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<Promotion> Promotions => Set<Promotion>();
+    public DbSet<FlashSale> FlashSales => Set<FlashSale>();
+    public DbSet<FlashSaleItem> FlashSaleItems => Set<FlashSaleItem>();
 
     // Module 6: Inventory
     public DbSet<InventoryBalance> InventoryBalances => Set<InventoryBalance>();
@@ -135,6 +137,25 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             t.HasCheckConstraint("CK_Promotions_MinOrderAmount", "[MinOrderAmount] >= 0");
             t.HasCheckConstraint("CK_Promotions_MaxDiscount", "[MaxDiscount] IS NULL OR [MaxDiscount] > 0");
             t.HasCheckConstraint("CK_Promotions_Usage", "[UsedCount] >= 0 AND ([UsageLimit] IS NULL OR [UsageLimit] >= 0 AND [UsedCount] <= [UsageLimit])");
+        });
+
+        // FlashSale
+        var flashSale = modelBuilder.Entity<FlashSale>();
+        flashSale.Property(fs => fs.Name).HasMaxLength(200).IsRequired();
+        flashSale.Property(fs => fs.Description).HasMaxLength(500);
+        flashSale.HasMany(fs => fs.Items).WithOne(fsi => fsi.FlashSale).HasForeignKey(fsi => fsi.FlashSaleId).OnDelete(DeleteBehavior.Cascade);
+
+        // FlashSaleItem
+        var flashSaleItem = modelBuilder.Entity<FlashSaleItem>();
+        flashSaleItem.Property(fsi => fsi.Sku).HasMaxLength(64).IsRequired();
+        flashSaleItem.Property(fsi => fsi.OriginalPrice).HasPrecision(18, 2);
+        flashSaleItem.Property(fsi => fsi.FlashSalePrice).HasPrecision(18, 2);
+        flashSaleItem.HasOne(fsi => fsi.Product).WithMany().HasForeignKey(fsi => fsi.ProductId).OnDelete(DeleteBehavior.Restrict);
+        flashSaleItem.HasOne(fsi => fsi.Variant).WithMany().HasForeignKey(fsi => fsi.VariantId).OnDelete(DeleteBehavior.Restrict);
+        flashSaleItem.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_FlashSaleItems_Price", "[FlashSalePrice] > 0 AND [FlashSalePrice] < [OriginalPrice]");
+            t.HasCheckConstraint("CK_FlashSaleItems_Quantity", "[QuantityLimit] > 0 AND [SoldCount] >= 0 AND [SoldCount] <= [QuantityLimit]");
         });
 
         // OrderItems
