@@ -14,11 +14,12 @@ public sealed record ProductItem(
     BrandItem? Brand = null,
     string? PackageSize = null,
     string? SaleUnit = null,
-    string Currency = "VND"
+    string Currency = "VND",
+    string? Availability = null
 );
 
 public sealed record ProductPage(IReadOnlyList<ProductItem> Items, int Page, int PageSize, int TotalCount);
-public sealed record VariantItem(int Id, string Sku, string Name, decimal Price, string? ImageUrl, bool IsActive);
+public sealed record VariantItem(int Id, string Sku, string Name, decimal Price, string? ImageUrl, bool IsActive, string? Availability = null);
 public sealed record ProductDetail(
     int Id,
     string Name,
@@ -58,6 +59,26 @@ public sealed record CatalogQuery(
             errors["price"] = ["Khoảng giá không hợp lệ."];
         return errors;
     }
+}
+
+/// <summary>
+/// Mức tồn hiển thị cho khách, suy ra từ U = P - Q - B - R - A của SKU (giả định TASK-010: ngưỡng sắp hết = 5).
+/// Không trả số U chính xác ra storefront; null khi SKU chưa có bản ghi tồn.
+/// </summary>
+public static class StockAvailability
+{
+    public const string InStock = "InStock";
+    public const string LowStock = "LowStock";
+    public const string OutOfStock = "OutOfStock";
+    public const int LowStockThreshold = 5;
+
+    public static string? FromUnits(int? uncommitted) => uncommitted switch
+    {
+        null => null,
+        <= 0 => OutOfStock,
+        <= LowStockThreshold => LowStock,
+        _ => InStock
+    };
 }
 
 public interface IProductReader

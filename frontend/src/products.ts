@@ -14,10 +14,11 @@ export interface Product {
   saleUnit?: string | null
   currency?: string
   isFeatured: boolean
+  availability?: string | null
 }
 
 export interface ProductPage { items: Product[]; page: number; pageSize: number; totalCount: number }
-export interface Variant { id: number; sku: string; name: string; price: number; imageUrl: string | null; isActive: boolean }
+export interface Variant { id: number; sku: string; name: string; price: number; imageUrl: string | null; isActive: boolean; availability?: string | null }
 export interface ProductDetail {
   id: number
   name: string
@@ -97,6 +98,27 @@ export interface Order {
   items?: OrderItem[]
   timeline?: OrderTimeline[]
   itemCount?: number
+  latestReturn?: { returnCode: string; status: string; refundAmount: number; createdAt: string } | null
+}
+
+export interface CartValidationLine {
+  sku: string
+  quantity: number
+  isValid: boolean
+  errorMessage?: string | null
+  productName?: string
+  variantName?: string
+  price?: number
+  originalPrice?: number
+  isFlashSale?: boolean
+  lineTotal?: number
+  availableStock?: number
+}
+
+export interface CartValidation {
+  items: CartValidationLine[]
+  totalAmount: number
+  allValid: boolean
 }
 
 export interface InventoryBalance {

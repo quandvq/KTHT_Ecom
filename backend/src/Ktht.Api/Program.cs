@@ -92,6 +92,22 @@ static IResult RequireAuth(HttpContext context, out AuthUserClaims user, string?
     return null!;
 }
 
+// TASK-010: nhân viên vận hành được xem đơn của mọi khách; Customer chỉ xem đơn của mình.
+static bool IsStaff(AuthUserClaims user) =>
+    user.Role is "Sales" or "Warehouse" or "CustomerSupport" or "Admin";
+
+static bool CanCancelAsStaff(AuthUserClaims user) =>
+    user.Role is "Sales" or "Admin";
+
+// Deadlock (1205), snapshot/serialization (3960) hoặc vi phạm unique (2601/2627) từ SQL Server, kể cả khi EF bọc trong DbUpdateException.
+static bool IsConcurrencyConflict(Exception ex)
+{
+    for (var current = ex; current != null; current = current.InnerException)
+        if (current is Microsoft.Data.SqlClient.SqlException sql && sql.Number is 1205 or 3960 or 2601 or 2627)
+            return true;
+    return false;
+}
+
 static string? GetPromotionError(Promotion promotion, decimal subtotal, DateTime now)
 {
     if (!promotion.IsActive) return "Mã khuyến mãi không hoạt động.";
@@ -431,7 +447,7 @@ app.MapPost("/api/cart/validate", async (CartValidateRequest req, CatalogDbConte
                           && fsi.FlashSale!.IsActive
                           && fsi.FlashSale.StartTime <= now
                           && now <= fsi.FlashSale.EndTime
-                          && fsi.QuantityLimit > fsi.SoldCount)
+                          && (fsi.QuantityLimit - fsi.SoldCount) >= requestedQty) // R-002: cùng điều kiện với POST /api/orders
             .FirstOrDefaultAsync();
 
         var unitPrice = flashItem != null ? flashItem.FlashSalePrice : variant.Price;
@@ -483,7 +499,7 @@ app.MapPost("/api/promotions/validate", async (PromotionValidateRequest req, Cat
                           && fsi.FlashSale!.IsActive
                           && fsi.FlashSale.StartTime <= now
                           && now <= fsi.FlashSale.EndTime
-                          && fsi.QuantityLimit > fsi.SoldCount)
+                          && (fsi.QuantityLimit - fsi.SoldCount) >= line.Quantity) // R-002: cùng điều kiện với POST /api/orders
             .FirstOrDefaultAsync();
 
         var unitPrice = flashItem != null ? flashItem.FlashSalePrice : variant.Price;
@@ -512,7 +528,10 @@ app.MapPost("/api/promotions/validate", async (PromotionValidateRequest req, Cat
 // ==========================================
 app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, CatalogDbContext db) =>
 {
+    // TASK-010 (F-001/F-002): đặt hàng bắt buộc đăng nhập để đơn luôn có chủ và chỉ chủ đơn xem/hủy được.
     var currentUser = GetCurrentUser(context);
+    if (currentUser == null)
+        return Results.Json(new { message = "Vui lòng đăng nhập để đặt hàng." }, statusCode: StatusCodes.Status401Unauthorized);
     if (string.IsNullOrWhiteSpace(req.CustomerName) || string.IsNullOrWhiteSpace(req.CustomerPhone) || string.IsNullOrWhiteSpace(req.ShippingAddress))
         return Results.BadRequest(new { message = "Vui lòng điền họ tên, số điện thoại và địa chỉ nhận hàng." });
 
@@ -528,7 +547,7 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
     {
         var existingOrder = await db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey);
         if (existingOrder != null)
-            return existingOrder.RequestHash == requestHash
+            return existingOrder.UserId == currentUser.Id && existingOrder.RequestHash == requestHash
                 ? Results.Ok(new { message = "Đơn hàng đã được tạo trước đó.", order = existingOrder })
                 : Results.Conflict(new { message = "Idempotency-Key đã được dùng cho nội dung đơn hàng khác." });
     }
@@ -549,9 +568,9 @@ app.MapPost("/api/orders", async (CreateOrderRequest req, HttpContext context, C
             var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == line.Sku);
             if (balance == null)
             {
-                balance = new InventoryBalance { Sku = line.Sku, WarehouseCode = "WH-CENTRAL", P = 100, B = 10 };
-                db.InventoryBalances.Add(balance);
-                await db.SaveChangesAsync();
+                // F-003: không tự sinh tồn kho cho SKU chưa có bản ghi; từ chối và giữ nguyên dữ liệu.
+                await transaction.RollbackAsync();
+                return Results.Conflict(new { message = $"Sản phẩm '{variant.Product.Name}' chưa có dữ liệu tồn kho nên chưa thể đặt hàng." });
             }
 
             // Invariant: U = P - Q - B - R - A must be >= requested quantity
@@ -743,8 +762,12 @@ app.MapGet("/api/me/orders", async (HttpContext context, CatalogDbContext db) =>
     return Results.Ok(orders);
 });
 
-app.MapGet("/api/orders/{codeOrId}", async (string codeOrId, CatalogDbContext db) =>
+app.MapGet("/api/orders/{codeOrId}", async (string codeOrId, HttpContext context, CatalogDbContext db) =>
 {
+    // F-001: bắt buộc đăng nhập; Customer chỉ thấy đơn của mình (đơn người khác trả 404 để không lộ sự tồn tại).
+    var authRes = RequireAuth(context, out var viewer);
+    if (authRes != null) return authRes;
+
     var query = db.Orders.AsNoTracking().Include(o => o.Items).Include(o => o.StatusHistories);
     Order? order;
 
@@ -753,7 +776,14 @@ app.MapGet("/api/orders/{codeOrId}", async (string codeOrId, CatalogDbContext db
     else
         order = await query.FirstOrDefaultAsync(o => o.OrderCode == codeOrId);
 
-    if (order == null) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+    if (order == null || (!IsStaff(viewer) && order.UserId != viewer.Id))
+        return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+
+    var latestReturn = await db.ReturnRequests.AsNoTracking()
+        .Where(r => r.OrderId == order.Id)
+        .OrderByDescending(r => r.CreatedAt)
+        .Select(r => new { r.ReturnCode, r.Status, r.RefundAmount, r.CreatedAt })
+        .FirstOrDefaultAsync();
 
     return Results.Ok(new
     {
@@ -766,65 +796,77 @@ app.MapGet("/api/orders/{codeOrId}", async (string codeOrId, CatalogDbContext db
         order.PaymentMethod,
         order.PaymentStatus,
         order.Status,
+        order.SubtotalAmount,
+        order.DiscountAmount,
+        order.PromotionCode,
         order.TotalAmount,
         order.Note,
         order.CreatedAt,
         items = order.Items.Select(i => new { i.Id, i.ProductId, i.ProductName, i.VariantName, i.Sku, i.UnitPrice, i.Quantity, i.LineTotal }),
-        timeline = order.StatusHistories.OrderBy(h => h.CreatedAt).Select(h => new { h.FromStatus, h.ToStatus, h.Actor, h.Note, h.CreatedAt })
+        timeline = order.StatusHistories.OrderBy(h => h.CreatedAt).Select(h => new { h.FromStatus, h.ToStatus, h.Actor, h.Note, h.CreatedAt }),
+        latestReturn
     });
 });
 
 app.MapPost("/api/orders/{id:int}/cancel", async (int id, CancelOrderRequest req, HttpContext context, CatalogDbContext db) =>
 {
-    var currentUser = GetCurrentUser(context);
-    await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+    // F-002: chỉ chủ đơn (Customer) hoặc Sales/Admin được hủy.
+    var authRes = RequireAuth(context, out var currentUser);
+    if (authRes != null) return authRes;
 
-    var order = await db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);
-    if (order == null) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+    var snapshot = await db.Orders.AsNoTracking().Select(o => new { o.Id, o.UserId, o.Status }).FirstOrDefaultAsync(o => o.Id == id);
+    var isOwner = snapshot != null && snapshot.UserId == currentUser.Id;
+    if (snapshot == null || (!isOwner && !IsStaff(currentUser))) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+    if (!isOwner && !CanCancelAsStaff(currentUser))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
 
-    if (order.Status is "Shipped" or "Delivered" or "Cancelled")
-        return Results.BadRequest(new { message = $"Không thể hủy đơn hàng đang ở trạng thái '{order.Status}'." });
-
-    var fromStatus = order.Status;
-    order.Status = "Cancelled";
-    order.UpdatedAt = DateTime.UtcNow;
-
-    // Release reservation R: reduce R
-    foreach (var item in order.Items)
+    try
     {
-        var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == item.Sku);
-        if (balance != null)
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        // AGENTS §7.3: claim trạng thái bằng conditional update trước; hủy và xuất kho đồng thời chỉ một bên thắng,
+        // không vừa xuất vừa giải phóng cùng reservation.
+        var claimed = await db.Orders.Where(o => o.Id == id && (o.Status == "Pending" || o.Status == "Confirmed"))
+            .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, "Cancelled").SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
+        var order = await db.Orders.AsNoTracking().Include(o => o.Items).FirstAsync(o => o.Id == id);
+        if (claimed == 0)
+            return Results.BadRequest(new { message = $"Không thể hủy đơn hàng đang ở trạng thái '{order.Status}'." });
+
+        foreach (var item in order.Items)
         {
-            balance.R = Math.Max(0, balance.R - item.Quantity);
+            // Giải phóng R nguyên tử trong SQL (không đọc-sửa-ghi).
+            await db.InventoryBalances.Where(b => b.Sku == item.Sku)
+                .ExecuteUpdateAsync(s => s.SetProperty(b => b.R, b => b.R - item.Quantity));
+            await db.InventoryReservations.Where(r => r.OrderId == id && r.Sku == item.Sku && r.Status == "Active")
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "Released"));
+
+            db.InventoryLedgers.Add(new InventoryLedger
+            {
+                TransactionCode = order.OrderCode,
+                Sku = item.Sku,
+                MovementType = "Release",
+                DeltaR = -item.Quantity,
+                Reason = req.Reason ?? "Hủy đơn hàng và giải phóng tồn giữ",
+                Actor = currentUser.FullName
+            });
         }
 
-        var res = await db.InventoryReservations.FirstOrDefaultAsync(r => r.OrderId == order.Id && r.Sku == item.Sku && r.Status == "Active");
-        if (res != null) res.Status = "Released";
-
-        db.InventoryLedgers.Add(new InventoryLedger
+        db.OrderStatusHistories.Add(new OrderStatusHistory
         {
-            TransactionCode = order.OrderCode,
-            Sku = item.Sku,
-            MovementType = "Release",
-            DeltaR = -item.Quantity,
-            Reason = req.Reason ?? "Hủy đơn hàng và giải phóng tồn giữ",
-            Actor = currentUser?.FullName ?? "User"
+            OrderId = id,
+            FromStatus = snapshot.Status,
+            ToStatus = "Cancelled",
+            Actor = currentUser.FullName,
+            Note = req.Reason ?? "Khách hàng/Nhân viên yêu cầu hủy đơn."
         });
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return Results.Ok(new { message = "Hủy đơn hàng và giải phóng tồn kho thành công.", status = "Cancelled" });
     }
-
-    db.OrderStatusHistories.Add(new OrderStatusHistory
+    catch (Exception ex) when (IsConcurrencyConflict(ex))
     {
-        OrderId = order.Id,
-        FromStatus = fromStatus,
-        ToStatus = "Cancelled",
-        Actor = currentUser?.FullName ?? "User",
-        Note = req.Reason ?? "Khách hàng/Nhân viên yêu cầu hủy đơn."
-    });
-
-    await db.SaveChangesAsync();
-    await transaction.CommitAsync();
-
-    return Results.Ok(new { message = "Hủy đơn hàng và giải phóng tồn kho thành công.", status = "Cancelled" });
+        return Results.Conflict(new { message = "Đơn hàng vừa được xử lý ở một phiên khác. Vui lòng tải lại trang." });
+    }
 });
 
 app.MapGet("/api/admin/orders", async (string? status, string? q, int? page, int? pageSize, HttpContext context, CatalogDbContext db) =>
@@ -869,31 +911,28 @@ app.MapPost("/api/admin/orders/{id:int}/confirm", async (int id, HttpContext con
     var authRes = RequireAuth(context, out var staff, "Sales");
     if (authRes != null) return authRes;
 
-    var order = await db.Orders.FindAsync(id);
+    await using var transaction = await db.Database.BeginTransactionAsync();
+    // TASK-010: Pending -> Confirmed bằng conditional update; không ghi đè đơn vừa bị hủy song song.
+    var claimed = await db.Orders.Where(o => o.Id == id && o.Status == "Pending")
+        .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, "Confirmed").SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
+    var order = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id);
     if (order == null) return Results.NotFound();
-
-    if (order.Status != "Pending")
+    if (claimed == 0)
         return Results.BadRequest(new { message = $"Đơn hàng đang ở trạng thái '{order.Status}', không thể xác nhận." });
-
-    order.Status = "Confirmed";
-    order.UpdatedAt = DateTime.UtcNow;
 
     db.OrderStatusHistories.Add(new OrderStatusHistory
     {
-        OrderId = order.Id,
+        OrderId = id,
         FromStatus = "Pending",
         ToStatus = "Confirmed",
         Actor = staff.FullName,
         Note = "Nhân viên bán hàng đã duyệt và xác nhận đơn."
     });
-
     await db.SaveChangesAsync();
+    await transaction.CommitAsync();
     return Results.Ok(new { message = "Xác nhận đơn hàng thành công.", status = "Confirmed" });
 });
 
-// ==========================================
-// MODULE 6: INVENTORY & FULFILLMENT
-// ==========================================
 app.MapGet("/api/admin/inventory", async (HttpContext context, CatalogDbContext db) =>
 {
     var authRes = RequireAuth(context, out _, "Warehouse");
@@ -925,55 +964,55 @@ app.MapPost("/api/admin/orders/{id:int}/fulfill", async (int id, HttpContext con
     var authRes = RequireAuth(context, out var staff, "Warehouse");
     if (authRes != null) return authRes;
 
-    await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-    var order = await db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);
-    if (order == null) return Results.NotFound();
-
-    if (order.Status is not ("Pending" or "Confirmed"))
-        return Results.BadRequest(new { message = $"Đơn hàng ở trạng thái '{order.Status}', không thể xuất kho." });
-
-    var fromStatus = order.Status;
-    order.Status = "Shipped";
-    order.UpdatedAt = DateTime.UtcNow;
-
-    // Fulfillment: Reduce P and Reduce R
-    foreach (var item in order.Items)
+    try
     {
-        var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == item.Sku);
-        if (balance != null)
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var before = await db.Orders.AsNoTracking().Select(o => new { o.Id, o.Status }).FirstOrDefaultAsync(o => o.Id == id);
+        if (before == null) return Results.NotFound();
+        // AGENTS §7.3: claim Pending/Confirmed -> Shipped trước; cạnh tranh với hủy chỉ một bên thắng.
+        var claimed = await db.Orders.Where(o => o.Id == id && (o.Status == "Pending" || o.Status == "Confirmed"))
+            .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, "Shipped").SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
+        var order = await db.Orders.AsNoTracking().Include(o => o.Items).FirstAsync(o => o.Id == id);
+        if (claimed == 0)
+            return Results.BadRequest(new { message = $"Đơn hàng ở trạng thái '{order.Status}', không thể xuất kho." });
+
+        // Fulfillment: giảm P và R nguyên tử trong SQL, đúng một lần cho đơn.
+        foreach (var item in order.Items)
         {
-            balance.P = Math.Max(0, balance.P - item.Quantity);
-            balance.R = Math.Max(0, balance.R - item.Quantity);
+            await db.InventoryBalances.Where(b => b.Sku == item.Sku)
+                .ExecuteUpdateAsync(s => s.SetProperty(b => b.P, b => b.P - item.Quantity).SetProperty(b => b.R, b => b.R - item.Quantity));
+            await db.InventoryReservations.Where(r => r.OrderId == id && r.Sku == item.Sku && r.Status == "Active")
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "Fulfilled"));
+
+            db.InventoryLedgers.Add(new InventoryLedger
+            {
+                TransactionCode = order.OrderCode,
+                Sku = item.Sku,
+                MovementType = "Issue",
+                DeltaP = -item.Quantity,
+                DeltaR = -item.Quantity,
+                Reason = $"Xuất kho giao hàng cho đơn {order.OrderCode}",
+                Actor = staff.FullName
+            });
         }
 
-        var res = await db.InventoryReservations.FirstOrDefaultAsync(r => r.OrderId == order.Id && r.Sku == item.Sku && r.Status == "Active");
-        if (res != null) res.Status = "Fulfilled";
-
-        db.InventoryLedgers.Add(new InventoryLedger
+        db.OrderStatusHistories.Add(new OrderStatusHistory
         {
-            TransactionCode = order.OrderCode,
-            Sku = item.Sku,
-            MovementType = "Issue",
-            DeltaP = -item.Quantity,
-            DeltaR = -item.Quantity,
-            Reason = $"Xuất kho giao hàng cho đơn {order.OrderCode}",
-            Actor = staff.FullName
+            OrderId = id,
+            FromStatus = before.Status,
+            ToStatus = "Shipped",
+            Actor = staff.FullName,
+            Note = "Kho đã soạn hàng và bàn giao cho đơn vị vận chuyển."
         });
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return Results.Ok(new { message = "Xuất kho thành công. Đơn hàng chuyển sang 'Đang giao hàng'.", status = "Shipped" });
     }
-
-    db.OrderStatusHistories.Add(new OrderStatusHistory
+    catch (Exception ex) when (IsConcurrencyConflict(ex))
     {
-        OrderId = order.Id,
-        FromStatus = fromStatus,
-        ToStatus = "Shipped",
-        Actor = staff.FullName,
-        Note = "Kho đã soạn hàng và bàn giao cho đơn vị vận chuyển."
-    });
-
-    await db.SaveChangesAsync();
-    await transaction.CommitAsync();
-
-    return Results.Ok(new { message = "Xuất kho thành công. Đơn hàng chuyển sang 'Đang giao hàng'.", status = "Shipped" });
+        return Results.Conflict(new { message = "Đơn hàng vừa được xử lý ở một phiên khác. Vui lòng tải lại trang." });
+    }
 });
 
 app.MapPost("/api/admin/orders/{id:int}/deliver", async (int id, HttpContext context, CatalogDbContext db) =>
@@ -987,8 +1026,8 @@ app.MapPost("/api/admin/orders/{id:int}/deliver", async (int id, HttpContext con
     if (order.Status != "Shipped")
         return Results.BadRequest(new { message = $"Đơn hàng đang ở trạng thái '{order.Status}', không thể đánh dấu giao thành công." });
 
+    // F-004: giao thành công không đồng nghĩa đã đối soát tiền (AGENTS §8); PaymentStatus giữ nguyên tới khi Sales/Admin xác nhận.
     order.Status = "Delivered";
-    order.PaymentStatus = "Paid";
     order.UpdatedAt = DateTime.UtcNow;
 
     db.OrderStatusHistories.Add(new OrderStatusHistory
@@ -997,11 +1036,41 @@ app.MapPost("/api/admin/orders/{id:int}/deliver", async (int id, HttpContext con
         FromStatus = "Shipped",
         ToStatus = "Delivered",
         Actor = staff.FullName,
-        Note = "Đơn hàng đã được giao thành công cho khách hàng."
+        Note = "Đơn hàng đã được giao thành công cho khách hàng. Thanh toán chờ đối soát."
     });
 
     await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Đã cập nhật trạng thái 'Giao thành công'.", status = "Delivered" });
+    return Results.Ok(new { message = "Đã cập nhật trạng thái 'Giao thành công'. Thanh toán chờ đối soát.", status = "Delivered", paymentStatus = order.PaymentStatus });
+});
+
+// F-004: đối soát thanh toán tách khỏi giao hàng. Chuyển Pending -> Paid đúng một lần (conditional update).
+app.MapPost("/api/admin/orders/{id:int}/confirm-payment", async (int id, HttpContext context, CatalogDbContext db) =>
+{
+    var authRes = RequireAuth(context, out var staff, "Sales");
+    if (authRes != null) return authRes;
+
+    var order = await db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id);
+    if (order == null) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+    if (order.Status != "Delivered")
+        return Results.Conflict(new { message = $"Chỉ đối soát thanh toán cho đơn đã giao; đơn đang ở trạng thái '{order.Status}'." });
+
+    await using var transaction = await db.Database.BeginTransactionAsync();
+    var updated = await db.Orders.Where(o => o.Id == id && o.Status == "Delivered" && o.PaymentStatus == "Pending")
+        .ExecuteUpdateAsync(s => s.SetProperty(o => o.PaymentStatus, "Paid").SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
+    if (updated == 0)
+        return Results.Conflict(new { message = $"Thanh toán của đơn đang ở trạng thái '{order.PaymentStatus}', không thể xác nhận lại." });
+
+    db.OrderStatusHistories.Add(new OrderStatusHistory
+    {
+        OrderId = id,
+        FromStatus = "Delivered",
+        ToStatus = "Delivered",
+        Actor = staff.FullName,
+        Note = $"Đã đối soát thanh toán ({order.PaymentMethod}): Pending -> Paid."
+    });
+    await db.SaveChangesAsync();
+    await transaction.CommitAsync();
+    return Results.Ok(new { message = "Đã xác nhận thu tiền cho đơn hàng.", paymentStatus = "Paid" });
 });
 
 app.MapPost("/api/admin/inventory/adjust", async (AdjustInventoryRequest req, HttpContext context, CatalogDbContext db) =>
@@ -1056,51 +1125,71 @@ app.MapPost("/api/me/returns", async (CreateReturnRequest req, HttpContext conte
     var currentUser = GetCurrentUser(context);
     if (currentUser == null) return Results.StatusCode(StatusCodes.Status401Unauthorized);
 
-    var order = await db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == req.OrderId);
-    if (order == null) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+    if (string.IsNullOrWhiteSpace(req.Reason))
+        return Results.BadRequest(new { message = "Vui lòng nhập lý do đổi trả." });
+    var requestedLines = (req.Items ?? []).Select(i => new ReturnLine(i.OrderItemId, i.Quantity)).ToList();
+    if (requestedLines.Count == 0 || requestedLines.Any(l => l.Quantity <= 0))
+        return Results.BadRequest(new { message = "Yêu cầu đổi trả phải có ít nhất một dòng hàng với số lượng dương." });
 
-    if (order.Status != "Delivered")
-        return Results.BadRequest(new { message = "Chỉ có thể yêu cầu đổi trả cho đơn hàng đã giao thành công." });
-
-    var returnItems = new List<ReturnItem>();
-    decimal refundTotal = 0;
-
-    foreach (var itemReq in req.Items)
+    try
     {
-        var orderItem = order.Items.FirstOrDefault(oi => oi.Id == itemReq.OrderItemId);
-        if (orderItem == null || itemReq.Quantity > orderItem.Quantity)
-            return Results.BadRequest(new { message = $"Số lượng yêu cầu trả vượt quá số lượng đã mua của dòng hàng." });
+        // TASK-010: kiểm tra quyền, trùng RMA và ghi RMA trong cùng transaction Serializable.
+        await using var returnTransaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
-        var refundLine = orderItem.UnitPrice * itemReq.Quantity;
-        refundTotal += refundLine;
+        var order = await db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == req.OrderId);
+        // Không tiết lộ đơn của người khác: trả 404 như đơn không tồn tại.
+        if (order == null || order.UserId != currentUser.Id) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
 
-        returnItems.Add(new ReturnItem
+        if (order.Status != "Delivered")
+            return Results.BadRequest(new { message = "Chỉ có thể yêu cầu đổi trả cho đơn hàng đã giao thành công." });
+
+        // R-004: chưa có bước từ chối RMA trong state table, nên mỗi đơn chỉ có một RMA (kể cả khi QC không đạt).
+        var existingReturn = await db.ReturnRequests.AsNoTracking()
+            .Where(r => r.OrderId == order.Id)
+            .Select(r => r.ReturnCode).FirstOrDefaultAsync();
+        if (existingReturn != null)
+            return Results.Conflict(new { message = $"Đơn hàng đã có yêu cầu đổi trả {existingReturn}. Bản demo chỉ hỗ trợ một yêu cầu cho mỗi đơn." });
+
+        // R-001: chỉ chấp nhận trả toàn bộ đơn; không dòng trùng, không vượt hay thiếu số lượng đã giao.
+        var policyError = ReturnPolicy.ValidateFullOrder(
+            order.Items.Select(i => new ReturnLine(i.Id, i.Quantity)).ToList(), requestedLines);
+        if (policyError != null) return Results.BadRequest(new { message = policyError });
+
+        var notes = (req.Items ?? []).ToDictionary(i => i.OrderItemId, i => i.Note);
+        var returnItems = order.Items.Select(orderItem => new ReturnItem
         {
             OrderItemId = orderItem.Id,
             Sku = orderItem.Sku,
-            Quantity = itemReq.Quantity,
+            Quantity = orderItem.Quantity,
             UnitPrice = orderItem.UnitPrice,
             QCStatus = "Pending",
-            Note = itemReq.Note
-        });
+            Note = notes.GetValueOrDefault(orderItem.Id)
+        }).ToList();
+        var refundTotal = returnItems.Sum(i => i.UnitPrice * i.Quantity);
+
+        // Mã RMA gắn với đơn: không va chạm ngẫu nhiên vì mỗi đơn chỉ có một RMA.
+        var returnCode = $"RMA-{order.OrderCode}";
+        var returnReq = new ReturnRequest
+        {
+            ReturnCode = returnCode,
+            OrderId = order.Id,
+            CustomerId = currentUser.Id,
+            Reason = req.Reason.Trim(),
+            Status = "Requested",
+            RefundAmount = refundTotal,
+            Items = returnItems
+        };
+
+        db.ReturnRequests.Add(returnReq);
+        await db.SaveChangesAsync();
+        await returnTransaction.CommitAsync();
+        return Results.Ok(new { message = "Gửi yêu cầu đổi trả thành công.", returnCode, returnId = returnReq.Id });
     }
-
-    var returnCode = $"RMA-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
-    var returnReq = new ReturnRequest
+    catch (Exception ex) when (IsConcurrencyConflict(ex))
     {
-        ReturnCode = returnCode,
-        OrderId = order.Id,
-        CustomerId = currentUser.Id,
-        Reason = req.Reason.Trim(),
-        Status = "Requested",
-        RefundAmount = refundTotal,
-        Items = returnItems
-    };
-
-    db.ReturnRequests.Add(returnReq);
-    await db.SaveChangesAsync();
-
-    return Results.Ok(new { message = "Gửi yêu cầu đổi trả thành công.", returnCode, returnId = returnReq.Id });
+        // R-003: deadlock/serialization/unique conflict ở bất kỳ bước nào của transaction -> 409, không 500.
+        return Results.Conflict(new { message = "Yêu cầu đổi trả cho đơn này vừa được xử lý ở một phiên khác. Vui lòng tải lại trang." });
+    }
 });
 
 app.MapGet("/api/admin/returns", async (HttpContext context, CatalogDbContext db) =>
@@ -1134,11 +1223,14 @@ app.MapPost("/api/admin/returns/{id:int}/approve", async (int id, HttpContext co
     var authRes = RequireAuth(context, out _, "CustomerSupport");
     if (authRes != null) return authRes;
 
-    var ret = await db.ReturnRequests.FindAsync(id);
+    var ret = await db.ReturnRequests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id);
     if (ret == null) return Results.NotFound();
 
-    ret.Status = "Approved";
-    await db.SaveChangesAsync();
+    // TASK-010: chỉ duyệt từ Requested; không kéo lùi RMA đã nhận/kiểm định về Approved.
+    var claimed = await db.ReturnRequests.Where(r => r.Id == id && r.Status == "Requested")
+        .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "Approved"));
+    if (claimed == 0)
+        return Results.Conflict(new { message = $"Yêu cầu đổi trả đang ở trạng thái '{ret.Status}', chỉ duyệt được khi đang chờ duyệt." });
     return Results.Ok(new { message = "Đã phê duyệt yêu cầu đổi trả.", status = "Approved" });
 });
 
@@ -1147,18 +1239,21 @@ app.MapPost("/api/admin/returns/{id:int}/receive", async (int id, HttpContext co
     var authRes = RequireAuth(context, out var staff, "Warehouse");
     if (authRes != null) return authRes;
 
-    var ret = await db.ReturnRequests.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id);
+    await using var receiveTransaction = await db.Database.BeginTransactionAsync();
+    // TASK-010: claim trạng thái trước (conditional update giữ khóa ghi) rồi mới đọc, để request song song
+    // không deadlock và chỉ một lần chuyển Approved -> Received thắng; nhận lặp không cộng P, Q hai lần.
+    var claimed = await db.ReturnRequests.Where(r => r.Id == id && r.Status == "Approved")
+        .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "Received"));
+    var ret = await db.ReturnRequests.AsNoTracking().Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id);
     if (ret == null) return Results.NotFound();
+    if (claimed == 0)
+        return Results.Conflict(new { message = $"Yêu cầu đổi trả đang ở trạng thái '{ret.Status}', chỉ tiếp nhận được khi đã duyệt (Approved)." });
 
-    // Goods physically arrive at warehouse: increase P and Q (quarantined awaiting QC)
+    // Goods physically arrive at warehouse: increase P and Q (quarantined awaiting QC). Cập nhật nguyên tử trong SQL.
     foreach (var item in ret.Items)
     {
-        var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == item.Sku);
-        if (balance != null)
-        {
-            balance.P += item.Quantity;
-            balance.Q += item.Quantity; // Quarantined, available U does not change!
-        }
+        await db.InventoryBalances.Where(b => b.Sku == item.Sku)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.P, b => b.P + item.Quantity).SetProperty(b => b.Q, b => b.Q + item.Quantity));
 
         db.InventoryLedgers.Add(new InventoryLedger
         {
@@ -1172,8 +1267,8 @@ app.MapPost("/api/admin/returns/{id:int}/receive", async (int id, HttpContext co
         });
     }
 
-    ret.Status = "Received";
     await db.SaveChangesAsync();
+    await receiveTransaction.CommitAsync();
     return Results.Ok(new { message = "Đã tiếp nhận hàng hoàn vào khu cách ly. Chờ nhân viên QC kiểm định.", status = "Received" });
 });
 
@@ -1182,18 +1277,25 @@ app.MapPost("/api/admin/returns/{id:int}/qc", async (int id, QCInspectionRequest
     var authRes = RequireAuth(context, out var staff, "Warehouse");
     if (authRes != null) return authRes;
 
+    await using var qcTransaction = await db.Database.BeginTransactionAsync();
+    // TASK-010: kiểm định đúng một lần (Received -> QC_Completed); lặp/đồng thời không trừ Q/P hai lần.
+    var qcResult = req.IsPassed ? "Passed" : "Failed";
+    var claimed = await db.ReturnRequests.Where(r => r.Id == id && r.Status == "Received")
+        .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "QC_Completed").SetProperty(r => r.QCResult, qcResult));
     var ret = await db.ReturnRequests.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id);
     if (ret == null) return Results.NotFound();
+    if (claimed == 0)
+        return Results.Conflict(new { message = $"Yêu cầu đổi trả đang ở trạng thái '{ret.Status}', chỉ kiểm định được sau khi kho tiếp nhận." });
 
     // If passed: reduce Q (which makes U increase!)
     // If failed: reduce P and Q (goods scrapped)
     foreach (var item in ret.Items)
     {
-        var balance = await db.InventoryBalances.FirstOrDefaultAsync(b => b.Sku == item.Sku);
         if (req.IsPassed)
         {
             item.QCStatus = "Passed";
-            if (balance != null) balance.Q = Math.Max(0, balance.Q - item.Quantity); // Releases from quarantine to U!
+            await db.InventoryBalances.Where(b => b.Sku == item.Sku)
+                .ExecuteUpdateAsync(s => s.SetProperty(b => b.Q, b => b.Q - item.Quantity));
 
             db.InventoryLedgers.Add(new InventoryLedger
             {
@@ -1208,11 +1310,8 @@ app.MapPost("/api/admin/returns/{id:int}/qc", async (int id, QCInspectionRequest
         else
         {
             item.QCStatus = "Failed";
-            if (balance != null)
-            {
-                balance.P = Math.Max(0, balance.P - item.Quantity);
-                balance.Q = Math.Max(0, balance.Q - item.Quantity);
-            }
+            await db.InventoryBalances.Where(b => b.Sku == item.Sku)
+                .ExecuteUpdateAsync(s => s.SetProperty(b => b.P, b => b.P - item.Quantity).SetProperty(b => b.Q, b => b.Q - item.Quantity));
 
             db.InventoryLedgers.Add(new InventoryLedger
             {
@@ -1227,11 +1326,10 @@ app.MapPost("/api/admin/returns/{id:int}/qc", async (int id, QCInspectionRequest
         }
     }
 
-    ret.Status = "QC_Completed";
-    ret.QCResult = req.IsPassed ? "Passed" : "Failed";
     await db.SaveChangesAsync();
+    await qcTransaction.CommitAsync();
 
-    return Results.Ok(new { message = "Hoàn tất kiểm định QC.", status = "QC_Completed", qcResult = ret.QCResult });
+    return Results.Ok(new { message = "Hoàn tất kiểm định QC.", status = "QC_Completed", qcResult });
 });
 
 app.MapPost("/api/admin/returns/{id:int}/refund", async (int id, HttpContext context, CatalogDbContext db) =>
@@ -1239,13 +1337,23 @@ app.MapPost("/api/admin/returns/{id:int}/refund", async (int id, HttpContext con
     var authRes = RequireAuth(context, out _, "Admin");
     if (authRes != null) return authRes;
 
-    var ret = await db.ReturnRequests.Include(r => r.Order).FirstOrDefaultAsync(r => r.Id == id);
+    await using var refundTransaction = await db.Database.BeginTransactionAsync();
+    // TASK-010: hoàn tiền đúng một lần, sau kiểm định, và chỉ khi đơn đã được đối soát là đã thu tiền.
+    // Claim cả hai trạng thái bằng conditional update trước khi đọc.
+    var claimed = await db.ReturnRequests.Where(r => r.Id == id && r.Status == "QC_Completed" && r.Order!.PaymentStatus == "Paid")
+        .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "Refunded"));
+    var ret = await db.ReturnRequests.AsNoTracking().Include(r => r.Order).FirstOrDefaultAsync(r => r.Id == id);
     if (ret == null) return Results.NotFound();
+    if (claimed == 0)
+    {
+        if (ret.Status == "QC_Completed" && ret.Order?.PaymentStatus != "Paid")
+            return Results.Conflict(new { message = "Đơn hàng chưa được đối soát là đã thanh toán nên chưa thể hoàn tiền." });
+        return Results.Conflict(new { message = $"Yêu cầu đổi trả đang ở trạng thái '{ret.Status}', chỉ hoàn tiền được sau khi hoàn tất kiểm định." });
+    }
 
-    ret.Status = "Refunded";
-    if (ret.Order != null) ret.Order.PaymentStatus = "Refunded";
-
-    await db.SaveChangesAsync();
+    await db.Orders.Where(o => o.Id == ret.OrderId)
+        .ExecuteUpdateAsync(s => s.SetProperty(o => o.PaymentStatus, "Refunded").SetProperty(o => o.UpdatedAt, DateTime.UtcNow));
+    await refundTransaction.CommitAsync();
     return Results.Ok(new { message = "Đã hoàn tất thủ tục hoàn tiền cho khách hàng.", status = "Refunded" });
 });
 

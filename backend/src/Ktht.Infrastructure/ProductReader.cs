@@ -41,40 +41,63 @@ public sealed class ProductReader(CatalogDbContext db) : IProductReader
             _ => query.OrderByDescending(p => p.Product.IsFeatured).ThenBy(p => p.Product.Id)
         };
 
-        var items = await sorted.Skip((options.Page - 1) * options.PageSize).Take(options.PageSize)
-            .Select(p => new ProductItem(
-                p.Product.Id,
-                p.Product.Name,
-                p.Product.Slug,
-                p.Variant.Sku,
-                p.Variant.Price,
-                p.Variant.ImageUrl ?? p.Product.ImageUrl,
-                new CategoryItem(p.Product.Category.Id, p.Product.Category.Name, p.Product.Category.Slug),
-                p.Product.IsFeatured,
-                p.Product.Brand == null ? null : new BrandItem(p.Product.Brand.Id, p.Product.Brand.Name, p.Product.Brand.Slug),
-                p.Product.PackageSize,
-                p.Product.SaleUnit,
-                p.Product.Currency))
+        // U được tính trong SQL từ cùng bản ghi InventoryBalances mà POST /api/orders dùng để giữ hàng.
+        var rows = await sorted.Skip((options.Page - 1) * options.PageSize).Take(options.PageSize)
+            .Select(p => new
+            {
+                Item = new ProductItem(
+                    p.Product.Id,
+                    p.Product.Name,
+                    p.Product.Slug,
+                    p.Variant.Sku,
+                    p.Variant.Price,
+                    p.Variant.ImageUrl ?? p.Product.ImageUrl,
+                    new CategoryItem(p.Product.Category.Id, p.Product.Category.Name, p.Product.Category.Slug),
+                    p.Product.IsFeatured,
+                    p.Product.Brand == null ? null : new BrandItem(p.Product.Brand.Id, p.Product.Brand.Name, p.Product.Brand.Slug),
+                    p.Product.PackageSize,
+                    p.Product.SaleUnit,
+                    p.Product.Currency,
+                    null),
+                Units = db.InventoryBalances.Where(b => b.Sku == p.Variant.Sku)
+                    .Select(b => (int?)(b.P - b.Q - b.B - b.R - b.A)).FirstOrDefault()
+            })
             .ToListAsync(cancellationToken);
 
+        var items = rows.Select(r => r.Item with { Availability = StockAvailability.FromUnits(r.Units) }).ToList();
         return new(items, options.Page, options.PageSize, count);
     }
 
-    public async Task<ProductDetail?> GetDetailAsync(string slug, CancellationToken cancellationToken) =>
-        await db.Products.AsNoTracking().Include(p => p.Brand).Include(p => p.Category)
+    public async Task<ProductDetail?> GetDetailAsync(string slug, CancellationToken cancellationToken)
+    {
+        var row = await db.Products.AsNoTracking().Include(p => p.Brand).Include(p => p.Category)
             .Where(p => p.Slug == slug && p.IsPublished && p.Variants.Any(v => v.IsActive))
-            .Select(p => new ProductDetail(
-                p.Id,
-                p.Name,
-                p.Slug,
-                p.Description,
-                p.ImageUrl,
-                new CategoryItem(p.Category.Id, p.Category.Name, p.Category.Slug),
-                p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).ThenBy(v => v.Id)
-                    .Select(v => new VariantItem(v.Id, v.Sku, v.Name, v.Price, v.ImageUrl, v.IsActive)).ToList(),
-                p.Brand == null ? null : new BrandItem(p.Brand.Id, p.Brand.Name, p.Brand.Slug),
-                p.PackageSize,
-                p.SaleUnit,
-                p.Currency))
+            .Select(p => new
+            {
+                Detail = new ProductDetail(
+                    p.Id,
+                    p.Name,
+                    p.Slug,
+                    p.Description,
+                    p.ImageUrl,
+                    new CategoryItem(p.Category.Id, p.Category.Name, p.Category.Slug),
+                    new List<VariantItem>(),
+                    p.Brand == null ? null : new BrandItem(p.Brand.Id, p.Brand.Name, p.Brand.Slug),
+                    p.PackageSize,
+                    p.SaleUnit,
+                    p.Currency),
+                Variants = p.Variants.Where(v => v.IsActive).OrderBy(v => v.Price).ThenBy(v => v.Id)
+                    .Select(v => new
+                    {
+                        Item = new VariantItem(v.Id, v.Sku, v.Name, v.Price, v.ImageUrl, v.IsActive, null),
+                        Units = db.InventoryBalances.Where(b => b.Sku == v.Sku)
+                            .Select(b => (int?)(b.P - b.Q - b.B - b.R - b.A)).FirstOrDefault()
+                    }).ToList()
+            })
             .SingleOrDefaultAsync(cancellationToken);
+
+        if (row is null) return null;
+        var variants = row.Variants.Select(v => v.Item with { Availability = StockAvailability.FromUnits(v.Units) }).ToList();
+        return row.Detail with { Variants = variants };
+    }
 }

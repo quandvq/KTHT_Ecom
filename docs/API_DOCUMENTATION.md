@@ -210,7 +210,8 @@ Authorization: Bearer <TOKEN>
 
 #### 5.1. Đặt hàng & Giữ tồn kho nguyên tử
 - **Endpoint:** `POST /api/orders`
-- **Quyền:** Public / Authenticated
+- **Quyền:** Authenticated (TASK-010: bắt buộc đăng nhập; không token → 401)
+- **Lỗi:** 409 khi thiếu tồn khả dụng, SKU chưa có bản ghi tồn kho (không tự sinh tồn), hoặc Idempotency-Key đã thuộc đơn/payload khác
 - **Header:** `Idempotency-Key: <UUID>` (Bắt buộc để chống đặt trùng khi lag mạng)
 - **Request Body:**
   ```json
@@ -241,7 +242,8 @@ Authorization: Bearer <TOKEN>
 
 #### 5.2. Tra cứu chi tiết đơn hàng
 - **Endpoint:** `GET /api/orders/{orderCode}`
-- **Quyền:** Public (khách vãng lai tra cứu qua mã đơn) hoặc Authenticated
+- **Quyền:** Authenticated. `Customer` chỉ xem đơn của mình (đơn người khác → 404); `Sales`, `Warehouse`, `CustomerSupport`, `Admin` xem mọi đơn
+- **Response bổ sung (TASK-010):** `subtotalAmount`, `discountAmount`, `promotionCode`, `latestReturn { returnCode, status, refundAmount, createdAt } | null`
 
 #### 5.3. Xem danh sách đơn của tôi
 - **Endpoint:** `GET /api/me/orders`
@@ -249,8 +251,8 @@ Authorization: Bearer <TOKEN>
 
 #### 5.4. Hủy đơn hàng (Khách hàng hủy)
 - **Endpoint:** `POST /api/orders/{id}/cancel`
-- **Quyền:** `Customer` sở hữu đơn hoặc `Admin`
-- **Business Rule:** Chỉ được hủy khi đơn ở trạng thái `Pending` hoặc `Confirmed`. Tự động giải phóng Reservation: $R \to U$.
+- **Quyền:** `Customer` sở hữu đơn, `Sales` hoặc `Admin` (khách khác → 404; vai trò nhân viên khác → 403)
+- **Business Rule:** Chỉ được hủy khi đơn ở trạng thái `Pending` hoặc `Confirmed`. Tự động giải phóng Reservation: $R \to U$. Hủy và xuất kho đồng thời: chỉ một chuyển trạng thái thắng, bên còn lại 400/409
 
 ---
 
@@ -285,7 +287,12 @@ Authorization: Bearer <TOKEN>
 #### 6.3. Xác nhận giao hàng thành công
 - **Endpoint:** `POST /api/admin/orders/{id}/deliver`
 - **Quyền:** `Warehouse` hoặc `Admin`
-- **Effect:** Chuyển trạng thái đơn sang `Delivered`, cập nhật `PaymentStatus = 'Paid'`.
+- **Effect:** Chuyển trạng thái đơn sang `Delivered`. **Không** đổi `PaymentStatus` (giao thành công chưa phải đã đối soát tiền).
+
+#### 6.4. Đối soát thanh toán (TASK-010)
+- **Endpoint:** `POST /api/admin/orders/{id}/confirm-payment`
+- **Quyền:** `Sales` hoặc `Admin`
+- **Effect:** Đơn `Delivered` có `PaymentStatus = Pending` → `Paid`, đúng một lần; gọi lặp/đồng thời → 409.
 
 ---
 
@@ -336,6 +343,7 @@ Authorization: Bearer <TOKEN>
     ]
   }
   ```
+- **Quy tắc (TASK-010):** chỉ chủ đơn (khác → 404); đơn phải `Delivered`; MVP chỉ nhận **trả toàn bộ đơn**: mỗi dòng đúng một lần với đủ số lượng đã giao (trùng/thiếu/sai số lượng → 400); mỗi đơn một RMA (lặp/đồng thời → 409). Mã RMA: `RMA-{orderCode}`.
 
 #### 8.2. Duyệt phiếu RMA
 - **Endpoint:** `POST /api/admin/returns/{id}/approve`
@@ -363,7 +371,8 @@ Authorization: Bearer <TOKEN>
 #### 8.5. Hoàn tiền cho khách hàng
 - **Endpoint:** `POST /api/admin/returns/{id}/refund`
 - **Quyền:** `Admin`
-- **Effect:** Cập nhật trạng thái RMA thành `Refunded`, cập nhật trạng thái đơn thành `Refunded`.
+- **Effect:** Cập nhật trạng thái RMA thành `Refunded`, cập nhật `PaymentStatus` của đơn thành `Refunded`.
+- **Điều kiện (TASK-010):** RMA ở `QC_Completed` và đơn đã `Paid`; ngược lại → 409. Các bước `approve` (Requested), `receive` (Approved), `qc` (Received) cũng chỉ chạy đúng một lần từ trạng thái nguồn tương ứng.
 
 ---
 

@@ -234,7 +234,8 @@ const returnReqRes = await request('/me/returns', {
   body: JSON.stringify({
     orderId: createdOrder.id,
     reason: 'Sản phẩm lỗi bao bì niêm phong',
-    items: [{ orderItemId: orderItem.id, quantity: 1, note: 'Rách vỏ hộp' }]
+    // TASK-010: MVP chỉ hỗ trợ trả toàn bộ đơn — gửi đủ mọi dòng với số lượng đã giao.
+    items: getOrderRes.data.items.map(i => ({ orderItemId: i.id, quantity: i.quantity, note: i.id === orderItem.id ? 'Rách vỏ hộp' : '' }))
   })
 })
 const returnObj = returnReqRes.data.returnRequest || returnReqRes.data
@@ -270,7 +271,17 @@ const qcRes = await request(`/admin/returns/${rma.id}/qc`, {
 })
 check('M8 - QC kiểm định đạt & trả về tồn bán U', qcRes.status === 200)
 
-// 8.6 Kế toán hoàn tiền
+// 8.6 Kế toán hoàn tiền — TASK-010: chỉ hoàn khi đơn đã được đối soát là đã thu tiền.
+const refundBeforePaymentRes = await request(`/admin/returns/${rma.id}/refund`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${adminToken}` }
+})
+check('M8 - Chặn hoàn tiền khi đơn COD chưa đối soát', refundBeforePaymentRes.status === 409)
+const confirmPaymentRes = await request(`/admin/orders/${createdOrder.id}/confirm-payment`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${adminToken}` }
+})
+check('M5 - Đối soát thanh toán COD (Pending -> Paid)', confirmPaymentRes.status === 200)
 const refundRes = await request(`/admin/returns/${rma.id}/refund`, {
   method: 'POST',
   headers: { Authorization: `Bearer ${adminToken}` }

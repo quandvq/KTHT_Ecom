@@ -92,4 +92,49 @@ if (balance.AvailableStock != 35)
     throw new Exception($"FAIL: Inventory post-QC Pass U expected 35, got {balance.AvailableStock}");
 Console.WriteLine("PASS: Inventory - QC Pass reduces Q and increases available U");
 
-Console.WriteLine($"\n[TẤT CẢ {cases.Length + 6} BÀI KIỂM TRA NGHIỆP VỤ ĐÃ VƯỢT QUA THÀNH CÔNG!]");
+// 8. Storefront availability derived from U (TASK-010): khách chỉ thấy mức, không thấy số U.
+var availabilityCases = new (int? Units, string? Expected)[]
+{
+    (null, null),
+    (-3, StockAvailability.OutOfStock),
+    (0, StockAvailability.OutOfStock),
+    (1, StockAvailability.LowStock),
+    (StockAvailability.LowStockThreshold, StockAvailability.LowStock),
+    (StockAvailability.LowStockThreshold + 1, StockAvailability.InStock)
+};
+foreach (var (units, expected) in availabilityCases)
+{
+    var actual = StockAvailability.FromUnits(units);
+    if (actual != expected) throw new Exception($"FAIL: Availability for U={units?.ToString() ?? "null"} expected {expected ?? "null"}, got {actual ?? "null"}");
+}
+// Ví dụ AGENTS mục 7: P=10, R=2, A=3 -> U=5 -> sắp hết; nhận thêm đơn 1 -> U=4 vẫn sắp hết; R tăng tới hết U -> hết hàng.
+var sample = new InventoryBalance { P = 10, R = 2, A = 3 };
+if (StockAvailability.FromUnits(sample.P - sample.Q - sample.B - sample.R - sample.A) != StockAvailability.LowStock)
+    throw new Exception("FAIL: Availability for AGENTS sample U=5 should be LowStock");
+sample.R += 5;
+if (StockAvailability.FromUnits(sample.P - sample.Q - sample.B - sample.R - sample.A) != StockAvailability.OutOfStock)
+    throw new Exception("FAIL: Availability after reserving all U should be OutOfStock");
+Console.WriteLine("PASS: Inventory - Storefront availability levels derived from U");
+
+// 9. Return policy (TASK-010 R-001): MVP chỉ trả toàn bộ đơn; tổng trả không vượt lượng đã giao.
+var deliveredLines = new List<ReturnLine> { new(5, 1), new(6, 3) };
+var returnCases = new (string Name, List<ReturnLine> Requested, bool Accepted)[]
+{
+    ("full order", [new(5, 1), new(6, 3)], true),
+    ("full order, other line order", [new(6, 3), new(5, 1)], true),
+    ("duplicate line exceeds delivered", [new(5, 1), new(5, 1), new(6, 3)], false),
+    ("partial quantity", [new(5, 1), new(6, 2)], false),
+    ("missing line", [new(5, 1)], false),
+    ("over quantity", [new(5, 2), new(6, 3)], false),
+    ("foreign line", [new(5, 1), new(6, 3), new(99, 1)], false),
+    ("zero quantity", [new(5, 0), new(6, 3)], false),
+    ("empty", [], false)
+};
+foreach (var (name, requested, accepted) in returnCases)
+{
+    var error = ReturnPolicy.ValidateFullOrder(deliveredLines, requested);
+    if ((error is null) != accepted) throw new Exception($"FAIL: Return policy - {name}: {error ?? "accepted"}");
+}
+Console.WriteLine($"PASS: Returns - Full-order policy ({returnCases.Length} cases: duplicate, partial, missing, foreign lines rejected)");
+
+Console.WriteLine($"\n[TẤT CẢ {cases.Length + 8} BÀI KIỂM TRA NGHIỆP VỤ ĐÃ VƯỢT QUA THÀNH CÔNG!]");

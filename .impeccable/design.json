@@ -1,0 +1,353 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T07:32:20.606Z",
+  "title": "Design System: V-Pharma",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Xanh Dược (Pharmacy Blue)",
+        "canonical": "#1b51a3",
+        "tonalRamp": [
+          "#0b2246",
+          "#123468",
+          "#1b51a3",
+          "#3a6fc0",
+          "#6b93d3",
+          "#a3bde6",
+          "#d2e0f4",
+          "#edf4ff"
+        ]
+      },
+      "primary-deep": {
+        "role": "primary",
+        "displayName": "Xanh Dược Sẫm (Deep Pharmacy Blue)",
+        "canonical": "#153f80",
+        "tonalRamp": [
+          "#081a36",
+          "#0f2d5b",
+          "#153f80",
+          "#2d5a9f",
+          "#5a80bf",
+          "#93acda",
+          "#c9d7ee",
+          "#eaf0f9"
+        ]
+      },
+      "focus-amber": {
+        "role": "secondary",
+        "displayName": "Vàng Hổ Phách (Dispensary Amber)",
+        "canonical": "#f2a900",
+        "tonalRamp": [
+          "#4a3300",
+          "#7a5500",
+          "#b07c00",
+          "#f2a900",
+          "#f8c24a",
+          "#fbd889",
+          "#fdeac0",
+          "#fff8e6"
+        ]
+      },
+      "flash-red": {
+        "role": "tertiary",
+        "displayName": "Đỏ Giờ Vàng (Flash Red)",
+        "canonical": "#dc2626",
+        "tonalRamp": [
+          "#450a0a",
+          "#7f1d1d",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#f87171",
+          "#fecaca",
+          "#fff5f5"
+        ]
+      },
+      "page-bg": {
+        "role": "neutral",
+        "displayName": "Xám Kệ (Shelf Grey)",
+        "canonical": "#ebebeb",
+        "tonalRamp": [
+          "#262626",
+          "#404040",
+          "#5c5c5c",
+          "#8a8a8a",
+          "#b5b5b5",
+          "#d6d6d6",
+          "#ebebeb",
+          "#f7f7f7"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Trắng Ngăn Kệ (Shelf White)",
+        "canonical": "#ffffff"
+      },
+      "surface-tint": {
+        "role": "neutral",
+        "displayName": "Trắng Ngà Lạnh (Cool Tint)",
+        "canonical": "#f8fafc"
+      },
+      "admin-canvas": {
+        "role": "neutral",
+        "displayName": "Nền Console (Console Canvas)",
+        "canonical": "#f5f7fb"
+      },
+      "nav-active": {
+        "role": "neutral",
+        "displayName": "Xanh Sương (Mist Blue)",
+        "canonical": "#edf4ff"
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Mực (Ink)",
+        "canonical": "#2b2b2b",
+        "tonalRamp": [
+          "#0f172a",
+          "#1e293b",
+          "#2b2b2b",
+          "#475569",
+          "#5c5c5c",
+          "#64748b",
+          "#94a3b8",
+          "#cbd5e1"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Đường Kẻ (Hairline)",
+        "canonical": "#e2e8f0"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "H1 hero storefront và trang giới thiệu."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Tiêu đề trang console và trang danh sách."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Tên sản phẩm (kẹp 2 dòng), tiêu đề thẻ."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Nội dung chính storefront."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Bảng, nav, meta; cỡ phổ biến nhất ở console."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Eyebrow/kicker màu primary, giãn chữ; in hoa trong console."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shelf-rest",
+        "value": "0 1px 2px rgb(0 0 0 / 10%)",
+        "purpose": "Thẻ sản phẩm/danh mục khi đứng yên."
+      },
+      {
+        "name": "float-soft",
+        "value": "0 6px 22px rgb(15 23 42 / 5%)",
+        "purpose": "Header storefront, thẻ truy cập admin."
+      },
+      {
+        "name": "lift-hover",
+        "value": "0 10px 24px rgba(15, 23, 42, 0.08)",
+        "purpose": "Hover thẻ sản phẩm, đi kèm translateY(-3px)."
+      },
+      {
+        "name": "hero-glow",
+        "value": "0 12px 36px rgb(27 81 163 / 8%)",
+        "purpose": "Chỉ dùng cho hero."
+      },
+      {
+        "name": "overlay",
+        "value": "0 24px 48px rgba(0, 0, 0, 0.25)",
+        "purpose": "Modal đăng nhập, hủy đơn, RMA."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "150ms ease",
+        "purpose": "Đổi màu nền nút, viền input."
+      },
+      {
+        "name": "lift",
+        "value": "200ms ease",
+        "purpose": "Nâng thẻ sản phẩm và nút chatbot khi hover."
+      },
+      {
+        "name": "modal-pop",
+        "value": "220ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Modal xuất hiện."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "none",
+        "purpose": "prefers-reduced-motion tắt smooth scroll và transition nút."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "xs",
+        "value": "480px"
+      },
+      {
+        "name": "sm",
+        "value": "680px"
+      },
+      {
+        "name": "md",
+        "value": "760px"
+      },
+      {
+        "name": "lg",
+        "value": "1000px"
+      },
+      {
+        "name": "container",
+        "value": "1232px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Hành động chính: thêm vào giỏ, đặt hàng, đăng nhập.",
+      "html": "<button class=\"ds-btn-primary\">Thêm vào giỏ</button>",
+      "css": ".ds-btn-primary { border: 0; border-radius: 8px; background: #1b51a3; color: #fff; padding: 10px 18px; font: 600 14px/1.6 system-ui, 'Segoe UI', Roboto, sans-serif; cursor: pointer; transition: background .15s; } .ds-btn-primary:hover { background: #153f80; } .ds-btn-primary:focus-visible { outline: 3px solid #f2a900; outline-offset: 3px; } .ds-btn-primary:disabled { opacity: .5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Phân trang, liên hệ, hành động phụ.",
+      "html": "<button class=\"ds-btn-outline\">Trang sau</button>",
+      "css": ".ds-btn-outline { min-height: 40px; padding: 8px 14px; border: 1px solid #1b51a3; border-radius: 8px; background: #fff; color: #1b51a3; font: 700 14px/1.6 system-ui, 'Segoe UI', Roboto, sans-serif; cursor: pointer; transition: background .15s, color .15s; } .ds-btn-outline:hover { background: #1b51a3; color: #fff; } .ds-btn-outline:focus-visible { outline: 3px solid #f2a900; outline-offset: 3px; } .ds-btn-outline:disabled { border-color: #b8c0cc; background: #f1f3f5; color: #5c5c5c; cursor: not-allowed; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Hủy đơn, xóa dòng giỏ hàng.",
+      "html": "<button class=\"ds-btn-danger\">Hủy đơn</button>",
+      "css": ".ds-btn-danger { border: 0; border-radius: 8px; background: #dc2626; color: #fff; padding: 10px 18px; font: 600 14px/1.6 system-ui, 'Segoe UI', Roboto, sans-serif; cursor: pointer; transition: background .15s; } .ds-btn-danger:hover { background: #b91c1c; } .ds-btn-danger:focus-visible { outline: 3px solid #f2a900; outline-offset: 3px; }"
+    },
+    {
+      "name": "Modal Field",
+      "kind": "input",
+      "refersTo": "input-modal",
+      "description": "Ô nhập 44px trong modal đăng nhập/đăng ký (focus đã gộp về primary).",
+      "html": "<label class=\"ds-field\"><span>Email</span><input class=\"ds-input\" type=\"email\" placeholder=\"ban@vidu.vn\"></label>",
+      "css": ".ds-field { display: grid; gap: 6px; font: 600 13px/1.4 system-ui, 'Segoe UI', Roboto, sans-serif; color: #2b2b2b; width: 280px; } .ds-input { height: 44px; padding: 0 14px; border: 1.5px solid #cbd5e1; border-radius: 8px; background: #fff; color: #2b2b2b; font: 400 14px system-ui, 'Segoe UI', Roboto, sans-serif; transition: border-color .15s, box-shadow .15s; } .ds-input:focus { outline: none; border-color: #1b51a3; box-shadow: 0 0 0 3px rgb(27 81 163 / 15%); }"
+    },
+    {
+      "name": "Product Card",
+      "kind": "card",
+      "refersTo": "product-card",
+      "description": "Thẻ sản phẩm trong lưới; tên kẹp 2 dòng, giá đậm màu primary, nâng khi hover.",
+      "html": "<a class=\"ds-product-card\" href=\"#\"><div class=\"ds-product-card__img\"></div><div class=\"ds-product-card__body\"><small>Vitamin &amp; Khoáng chất</small><h3>Viên sủi Vitamin C 1000mg hương cam (Tuýp 10 viên)</h3><p>Tuýp</p><strong>45.000 ₫</strong></div></a>",
+      "css": ".ds-product-card { display: flex; flex-direction: column; width: 220px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 10%); color: inherit; text-decoration: none; font-family: system-ui, 'Segoe UI', Roboto, sans-serif; transition: transform .2s ease, box-shadow .2s ease; } .ds-product-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(15, 23, 42, .08); } .ds-product-card:focus-visible { outline: 3px solid #f2a900; outline-offset: 3px; } .ds-product-card__img { aspect-ratio: 1; background: #f8fafc; } .ds-product-card__body { padding: 16px; } .ds-product-card small { color: #5c5c5c; font-size: 11px; } .ds-product-card h3 { margin: 8px 0 12px; font-size: 15px; font-weight: 650; line-height: 1.4; height: 42px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: #1e293b; } .ds-product-card p { margin: 0 0 10px; font-size: 13px; color: #64748b; } .ds-product-card strong { font-size: 17px; font-weight: 750; color: #1b51a3; }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "status-badge",
+      "description": "Viên thuốc trạng thái Order/Return từ bảng ánh xạ tập trung.",
+      "html": "<span class=\"ds-badge ds-badge--pending\">Chờ xác nhận</span> <span class=\"ds-badge ds-badge--confirmed\">Đã xác nhận</span> <span class=\"ds-badge ds-badge--shipped\">Đã xuất kho</span> <span class=\"ds-badge ds-badge--delivered\">Đã giao</span> <span class=\"ds-badge ds-badge--cancelled\">Đã hủy</span> <span class=\"ds-badge ds-badge--qc\">Đang kiểm định</span>",
+      "css": ".ds-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font: 600 12px/1.4 system-ui, 'Segoe UI', Roboto, sans-serif; margin: 2px; } .ds-badge--pending { background: #fef3c7; color: #b45309; } .ds-badge--confirmed { background: #e0f2fe; color: #0369a1; } .ds-badge--shipped { background: #f3e8ff; color: #7e22ce; } .ds-badge--delivered { background: #dcfce7; color: #15803d; } .ds-badge--cancelled { background: #fee2e2; color: #b91c1c; } .ds-badge--qc { background: #ccfbf1; color: #0f766e; }"
+    },
+    {
+      "name": "Admin Sidebar Nav",
+      "kind": "nav",
+      "refersTo": "admin-nav-item-active",
+      "description": "Sidebar console 248px; mục active nền mist, chữ primary.",
+      "html": "<nav class=\"ds-admin-nav\"><a href=\"#\" class=\"is-active\">Tổng quan KPI</a><a href=\"#\">Đơn hàng</a><a href=\"#\">Kho &amp; Tồn</a><a href=\"#\">Đổi trả &amp; QC</a></nav>",
+      "css": ".ds-admin-nav { display: grid; gap: 8px; width: 208px; padding: 20px; background: #fff; border-right: 1px solid #e2e8f0; font-family: system-ui, 'Segoe UI', Roboto, sans-serif; } .ds-admin-nav a { display: block; padding: 10px 14px; border-radius: 8px; color: #334155; font-size: 14px; font-weight: 500; text-decoration: none; } .ds-admin-nav a:hover { background: #f1f5f9; color: #1b51a3; } .ds-admin-nav a:focus-visible { outline: 3px solid #f2a900; outline-offset: 3px; } .ds-admin-nav a.is-active { background: #edf4ff; color: #1b51a3; font-weight: 700; }"
+    },
+    {
+      "name": "Flash Sale Progress",
+      "kind": "custom",
+      "refersTo": "flashsale-badge",
+      "description": "Badge giảm giá và thanh tiến độ đã bán của flash sale.",
+      "html": "<div class=\"ds-flash\"><span class=\"ds-flash__badge\">-30%</span><div class=\"ds-flash__bar\"><div style=\"width:62%\"></div><span>Đã bán 31/50</span></div></div>",
+      "css": ".ds-flash { position: relative; width: 220px; padding: 40px 16px 16px; border: 1.5px solid #fecaca; border-radius: 18px; background: linear-gradient(135deg, #fff5f5 0%, #fff 100%); font-family: system-ui, 'Segoe UI', Roboto, sans-serif; } .ds-flash__badge { position: absolute; top: 10px; right: 10px; background: #dc2626; color: #fff; font-weight: 800; font-size: 12px; padding: 4px 8px; border-radius: 6px; box-shadow: 0 2px 6px rgba(220, 38, 38, .3); } .ds-flash__bar { position: relative; height: 14px; background: #f1f5f9; border-radius: 10px; overflow: hidden; } .ds-flash__bar div { height: 100%; background: linear-gradient(90deg, #f97316, #ef4444); border-radius: 10px; } .ds-flash__bar span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #475569; line-height: 1; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Orderly Dispensary (Quầy thuốc ngăn nắp)",
+    "overview": "V-Pharma trông như một quầy thuốc đạt chuẩn: sáng, sạch, mọi thứ nằm đúng kệ. Người xem tin vì thấy trật tự, không phải vì trang trí. Nền trang là một lớp xám trung tính (page-bg). Trên đó, nội dung được xếp trong các khối trắng như ngăn kệ: header, thẻ sản phẩm, bảng, modal. Màu xanh dược (primary) đánh dấu những gì bấm được và những gì cần nhìn: giá, link, mục đang chọn. Vàng hổ phách (focus-amber) chỉ xuất hiện khi focus bằng bàn phím.\n\nHình khối thân thiện và mềm. Góc bo rõ (8–18px, tăng dần theo kích thước khối). Shadow rất nhạt khi đứng yên và chỉ nổi lên khi tương tác (thẻ sản phẩm nâng 3px khi hover). Mật độ thay đổi theo bề mặt: storefront thoáng (khoảng cách section 48px, hero rộng), console `/admin` dày đặc hơn (sidebar 248px, bảng hàng 14px, nền admin-canvas). Cả hai dùng chung một bộ token.\n\nFlash sale là ngoại lệ có chủ đích duy nhất về cường độ: đỏ (flash-red), dải gradient cam–đỏ và chữ in hoa. Nó chỉ dành cho chiến dịch có thời hạn, không lan sang chỗ khác.",
+    "keyCharacteristics": [
+      "Một màu chủ xanh dược trên nền xám trung tính và các khối trắng.",
+      "Góc bo mềm, tăng dần theo kích thước khối (input 6 → hero 18px).",
+      "Phẳng khi đứng yên; độ sâu chỉ xuất hiện khi tương tác hoặc ở lớp phủ.",
+      "Màu trạng thái nằm trong một bảng ánh xạ tập trung (badge dạng viên thuốc).",
+      "Toàn bộ giao diện tiếng Việt, chữ sans gọn, nhãn nhỏ in đậm và giãn chữ."
+    ],
+    "rules": [
+      {
+        "name": "The One Blue Rule",
+        "body": "Chỉ có một màu xanh hành động: primary. Xanh trời `#0284c7`/`#0369a1` từng xuất hiện ở chatbot, footer và vòng focus; TASK-010 đã gộp về primary và token `--shop-focus-halo` (`rgb(27 81 163 / 15%)`). Màn hình mới không được dùng lại. (Riêng badge \"confirmed\" giữ cặp màu xanh nhạt/xanh đậm của bảng trạng thái.)",
+        "section": "colors"
+      },
+      {
+        "name": "The Amber Is For Focus Rule",
+        "body": "Vàng hổ phách báo hiệu vị trí bàn phím. Không dùng làm màu trang trí hay màu nút.",
+        "section": "colors"
+      },
+      {
+        "name": "The Red Is Seasonal Rule",
+        "body": "Đỏ và gradient cam–đỏ chỉ dành cho flash sale và hành động phá hủy. Không dùng để \"làm nổi\" nội dung thường.",
+        "section": "colors"
+      },
+      {
+        "name": "The Weight Not Font Rule",
+        "body": "Phân cấp bằng độ đậm (400 / 600 / 650 / 700 / 800) và cỡ chữ. Không thêm họ font thứ hai cho tiêu đề.",
+        "section": "typography"
+      },
+      {
+        "name": "The Price Is Bold Blue Rule",
+        "body": "Giá luôn đậm (750) và màu primary, 17px trên thẻ sản phẩm.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Until Touched Rule",
+        "body": "Khối ở trạng thái nghỉ không bao giờ đổ bóng quá 5–10% opacity. Shadow lớn chỉ dành cho hover và lớp phủ.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Bigger Box, Softer Corner Rule",
+        "body": "Khối càng lớn thì bo càng lớn. Không dùng một bán kính chung cho mọi thứ.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do dùng primary cho mọi hành động chính, link và giá. Hover luôn là primary-deep.",
+      "Do đặt nội dung trong khối trắng (surface) có viền hairline trên nền page-bg hoặc admin-canvas.",
+      "Do bo góc theo kích thước khối: input 6px, nút 8px, thẻ 12px, modal 16px, hero 18px.",
+      "Do hiển thị trạng thái đơn và RMA bằng Status Badge lấy từ bảng ánh xạ tập trung.",
+      "Do giữ vòng focus-amber 3px, offset 3px trên mọi phần tử tương tác.",
+      "Do kẹp tên sản phẩm 2 dòng và giữ chiều cao thẻ đồng đều trong lưới."
+    ],
+    "donts": [
+      "Don't dùng xanh trời `#0284c7`/`#0369a1` hay bất kỳ màu xanh hành động thứ hai nào.",
+      "Don't dùng đỏ hoặc gradient cam–đỏ ngoài flash sale và hành động phá hủy.",
+      "Don't thêm shadow đậm cho khối đứng yên. Shadow lớn chỉ dành cho hover và modal.",
+      "Don't thêm inline style mới. Storefront chỉ còn một inline style hợp lệ (độ rộng thanh tiến độ flash sale tính từ dữ liệu); 39 inline style còn lại thuộc console admin, là drift cần dọn ở task sau.",
+      "Don't dùng emoji hay ký tự Unicode làm icon. Dùng component `Icon` (SVG nét 1.75px) trong App.tsx.",
+      "Don't đặt eyebrow/kicker chữ in hoa phía trên tiêu đề trang.",
+      "Don't hiển thị giá hoặc tổng tiền từ giỏ hàng lưu trên trình duyệt như số cuối cùng. Giỏ hàng và checkout hiển thị giá do `POST /api/cart/validate` trả về.",
+      "Don't thêm huy hiệu chứng nhận, giấy phép hay con dấu tin cậy làm trang trí. Thương hiệu V-Pharma là hư cấu (xem PRODUCT.md)."
+    ]
+  }
+}

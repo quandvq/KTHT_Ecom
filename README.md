@@ -23,7 +23,7 @@ Nền tảng thương mại điện tử dược phẩm trực tuyến **V-Pharm
 | Front-end | React 18, TypeScript, Vite, CSS Responsive |
 | Back-end | ASP.NET Core Web API, Entity Framework Core |
 | Cơ sở dữ liệu | SQL Server LocalDB / Developer |
-| Kiểm thử | Vitest (14 bài test FE), Bộ kiểm tra nghiệp vụ .NET (23 bài checks), E2E test scripts |
+| Kiểm thử | Vitest (29 bài test FE), Bộ kiểm tra nghiệp vụ .NET (25 bài checks), E2E test scripts (gồm `tests/e2e/task010-api.mjs` kiểm tra quyền và tranh chấp trên SQL Server test) |
 
 Phiên bản .NET được pin trong `global.json`; dependency JavaScript được khóa trong `frontend/package-lock.json`.
 
@@ -66,7 +66,9 @@ npm.cmd --prefix frontend run test -- --run
 npm.cmd --prefix frontend run build
 ```
 
-E2E có thay đổi dữ liệu phải dùng database test riêng. Kết quả gần nhất nằm trong `docs/TEST_REPORT.md`; không suy rộng kết quả cũ cho code mới.
+E2E có thay đổi dữ liệu phải dùng database test riêng. Ví dụ: chạy API với `KTHT_Ecom_Test` ở cổng 5081 rồi `$env:KTHT_TEST_DB = "KTHT_Ecom_Test"; node tests/e2e/task010-api.mjs http://127.0.0.1:5081` (script từ chối chạy nếu tên database không kết thúc bằng `_Test`; cách tạo database xem `docs/tasks/TASK-010.md`). Kết quả gần nhất nằm trong `docs/TEST_REPORT.md` và `docs/reviews/TASK-010.md`; không suy rộng kết quả cũ cho code mới.
+
+Đặt hàng, xem và hủy đơn yêu cầu đăng nhập (tài khoản demo `customer@ktht.local` / `Ktht@2026`).
 
 ## Tài liệu chính
 

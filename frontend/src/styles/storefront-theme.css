@@ -8,10 +8,30 @@
   --shop-text-muted: #5c5c5c;
   --shop-border: #e2e8f0;
   --shop-focus: #f2a900;
-  --shop-font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --shop-ink-strong: #1e293b;
+  --shop-slate: #64748b;
+  --shop-surface-tint: #f8fafc;
+  --shop-nav-active: #edf4ff;
+  --shop-hero-wash: #e6f0ff;
+  --shop-input-stroke: #aab7c8;
+  --shop-danger: #dc2626;
+  --shop-danger-deep: #b91c1c;
+  --shop-success: #16a34a;
+  /* TASK-010: chưa tự host webfont; dùng font hệ thống có đủ dấu tiếng Việt (Windows hiển thị Segoe UI). */
+  --shop-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --shop-radius-input: 6px;
   --shop-radius-button: 8px;
+  --shop-radius-tile: 10px;
   --shop-radius-card: 12px;
+  --shop-radius-header: 14px;
+  --shop-radius-modal: 16px;
+  --shop-radius-hero: 18px;
   --shop-shadow-card: 0 1px 2px rgb(0 0 0 / 10%);
+  --shop-shadow-float: 0 6px 22px rgb(15 23 42 / 5%);
+  --shop-shadow-lift: 0 10px 24px rgb(15 23 42 / 8%);
+  --shop-shadow-hero: 0 12px 36px rgb(27 81 163 / 8%);
+  --shop-shadow-overlay: 0 24px 48px rgb(0 0 0 / 25%);
+  --shop-focus-halo: 0 0 0 3px rgb(27 81 163 / 15%);
   --shop-container: 1232px;
 }
 
